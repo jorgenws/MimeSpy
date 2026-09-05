@@ -16,9 +16,17 @@ internal static class SignatureIndex
     private static readonly Dictionary<(int Offset, byte FirstByte), List<FileSignature>> Buckets;
     private static readonly int[] Offsets;
 
+    /// <summary>
+    /// The number of leading bytes needed to reach every signature in the embedded
+    /// table - the offset plus length of whichever signature runs deepest. Derived
+    /// from the table itself so it can't drift out of sync as entries change.
+    /// </summary>
+    public static readonly int MaxHeaderReach;
+
     static SignatureIndex()
     {
         Buckets = [];
+        var maxHeaderReach = 0;
 
         foreach (var signature in LoadSignatures())
         {
@@ -30,9 +38,16 @@ internal static class SignatureIndex
             }
 
             bucket.Add(signature);
+
+            var reach = signature.HeaderOffset + signature.Header.Length;
+            if (reach > maxHeaderReach)
+            {
+                maxHeaderReach = reach;
+            }
         }
 
         Offsets = Buckets.Keys.Select(k => k.Offset).Distinct().ToArray();
+        MaxHeaderReach = maxHeaderReach;
     }
 
     public static IReadOnlyList<FileSignature> FindMatches(ReadOnlySpan<byte> bytes)

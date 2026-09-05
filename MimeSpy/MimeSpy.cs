@@ -59,6 +59,32 @@ public sealed class MimeSpy
 
         return results;
     }
+
+    /// <summary>
+    /// Identifies the file format(s) matching the leading bytes of <paramref name="stream"/>.
+    /// </summary>
+    /// <param name="stream">
+    /// The stream to read from. Only as many leading bytes as <see cref="Spy(ReadOnlySpan{byte})"/>
+    /// can use are read - see its remarks for what that bound does and doesn't guarantee.
+    /// If the stream is seekable, its position is restored afterwards, so this is a peek
+    /// rather than a consume; on a non-seekable stream the read bytes are gone from it.
+    /// </param>
+    public IReadOnlyList<Result> Spy(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        var startPosition = stream.CanSeek ? stream.Position : -1;
+        Span<byte> buffer = stackalloc byte[SignatureIndex.MaxHeaderReach];
+
+        var totalRead = stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+
+        if (startPosition >= 0)
+        {
+            stream.Position = startPosition;
+        }
+
+        return Spy(buffer[..totalRead]);
+    }
 }
 
 public sealed record Result(IReadOnlyList<string> Extensions, IReadOnlyList<string> MimeTypes, string? PrimaryMimeType, string Description);

@@ -226,6 +226,65 @@ public class MimeSpyTests
         Assert.Contains(result, r => r.Extensions.Contains("jar"));
     }
 
+    [Fact]
+    public void Spy_Stream_MatchesSameAsEquivalentBytes()
+    {
+        using var stream = new MemoryStream("%PDF-1.7 rest of file"u8.ToArray());
+
+        var result = _sut.Spy(stream);
+
+        Assert.Contains(result, r => r.Extensions.Contains("pdf"));
+    }
+
+    [Fact]
+    public void Spy_SeekableStream_RestoresOriginalPosition()
+    {
+        using var stream = new MemoryStream("%PDF-1.7 rest of file"u8.ToArray());
+        stream.Position = 3;
+
+        _sut.Spy(stream);
+
+        Assert.Equal(3, stream.Position);
+    }
+
+    [Fact]
+    public void Spy_StreamThatOnlyReadsAFewBytesAtATime_StillAssemblesFullHeader()
+    {
+        // Some streams (e.g. network streams) can return fewer bytes than
+        // requested even when more is available; the read loop must keep
+        // pulling until it has enough or the stream is exhausted.
+        using var stream = new TrickleStream("%PDF-1.7 rest of file"u8.ToArray(), maxBytesPerRead: 2);
+
+        var result = _sut.Spy(stream);
+
+        Assert.Contains(result, r => r.Extensions.Contains("pdf"));
+    }
+
+    [Fact]
+    public void Spy_ShortStream_ReturnsMatchesUsingWhateverWasAvailable()
+    {
+        using var stream = new MemoryStream("%PDF-1.7"u8.ToArray());
+
+        var result = _sut.Spy(stream);
+
+        Assert.Contains(result, r => r.Extensions.Contains("pdf"));
+    }
+
+    [Fact]
+    public void Spy_NullStream_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => _sut.Spy((Stream)null!));
+    }
+
+    private sealed class TrickleStream(byte[] data, int maxBytesPerRead) : MemoryStream(data)
+    {
+        public override int Read(Span<byte> buffer)
+        {
+            var limited = buffer.Length > maxBytesPerRead ? buffer[..maxBytesPerRead] : buffer;
+            return base.Read(limited);
+        }
+    }
+
     private static byte[] BuildZipWithFirstEntry(string name, byte[] content, bool stored = false)
     {
         var nameBytes = Encoding.ASCII.GetBytes(name);

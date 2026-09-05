@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="MimeSpy/MimeSpy.csproj" />
+  <Project Path="MimeSpy.Tests/MimeSpy.Tests.csproj" />
+</Solution>

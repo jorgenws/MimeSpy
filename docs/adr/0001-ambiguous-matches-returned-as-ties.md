@@ -1,0 +1,3 @@
+# Ambiguous matches are returned as ties, not guessed
+
+Several file formats share identical headers (e.g. bzip2 and a bzip2-compressed Mac disk image both start with `42 5A 68`), so a single "best" match can't always be determined from header bytes alone. We decided `Spy` returns every signature tied for the longest matched header length, rather than picking one arbitrarily or by declaration order in the source data. This keeps the library honest about genuine ambiguity and pushes the choice (if one is needed) to the caller, at the cost of callers having to handle a result list instead of a single value.

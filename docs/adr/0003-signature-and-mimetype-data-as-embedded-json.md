@@ -1,0 +1,3 @@
+# Signature and mime-type tables are embedded JSON, not hardcoded C#
+
+MimeSpy's data comes from two external, independently-maintained sources ([Gary Kessler's file signature table](https://www.garykessler.net/software/index.html#filesigs) and [jshttp/mime-db](https://github.com/jshttp/mime-db)). We decided to keep both as embedded JSON resources (`Resources/file_signatures.json`, `Resources/mimeTypes.json`) parsed once into in-memory indexes at first use, rather than transcribing them into C# types or code-generating from them at build time. Updating either table to pick up new formats is then a data refresh - drop in a new JSON file - rather than a code change, at the cost of a runtime JSON-parsing step during static initialization.

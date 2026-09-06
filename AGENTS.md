@@ -29,4 +29,7 @@ The two source tables live as embedded resources under Resources/ in their nativ
 Non-obvious architectural decisions are recorded as ADRs in docs/adr/ - check there before revisiting how ambiguous matches, ZIP disambiguation, or the data format are handled, and add a new one when you make a similarly hard-to-reverse call.
 
 ## Experiments
-Use the .scratch folder for experiments, throw away test setup and stuff like that.
+Use the .scratch folder for experiments, throw away test setup and stuff like that
+
+## Handover
+Use the .handover folder for handover documents between agent sessions.

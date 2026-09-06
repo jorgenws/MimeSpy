@@ -54,4 +54,4 @@ The first three tables are embedded as resources under [Resources/](Resources/) 
 
 ## License
 
-Not yet chosen. MimeSpy embeds data derived from the sources above, so their license terms should be checked before picking and publishing under a license.
+[MIT](LICENSE).

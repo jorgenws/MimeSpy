@@ -14,6 +14,7 @@
     <Authors>Jorgen Wang Svendsen</Authors>
     <Description>Detects MIME types from file header bytes.</Description>
     <PackageTags>mime;mime-type;file-signature;magic-bytes</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/jorgenws/MimeSpy</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>

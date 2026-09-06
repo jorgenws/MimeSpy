@@ -10,7 +10,7 @@
 
   <PropertyGroup>
     <PackageId>MimeSpy</PackageId>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Authors>Jorgen Wang Svendsen</Authors>
     <Description>Detects MIME types from file header bytes.</Description>
     <PackageTags>mime;mime-type;file-signature;magic-bytes</PackageTags>

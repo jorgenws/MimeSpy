@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/jorgenws/MimeSpy/main/mimespy.png" alt="MimeSpy" width="300">
-</p>
+![MimeSpy](https://raw.githubusercontent.com/jorgenws/MimeSpy/main/mimespy.png)
 
 A library to detect mime type from file headers.
 

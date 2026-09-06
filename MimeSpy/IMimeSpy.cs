@@ -20,6 +20,11 @@ public interface IMimeSpy
     /// fixed-size disambiguation window, and, for a few container formats (ZIP-based
     /// and OLE2/CFBF), no fixed count at all - see docs/adr/0002 and docs/adr/0011.
     /// Supplying fewer bytes never produces a wrong answer, only a less specific one.
+    /// A caller reading bytes itself (rather than going through
+    /// <see cref="Spy(Stream)"/>/<see cref="SpyAsync"/>, which already read exactly
+    /// this much) and wanting parity with those overloads without tracking either
+    /// constant should read <see cref="AsfContainerSniffer.SearchWindowSize"/>
+    /// (8192) bytes as a general-purpose default.
     /// </param>
     IReadOnlyList<Result> Spy(ReadOnlySpan<byte> bytes);
 

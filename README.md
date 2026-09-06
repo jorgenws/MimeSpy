@@ -16,6 +16,8 @@ foreach (var result in results)
 
 `Spy` takes a `ReadOnlySpan<byte>` (a full file or just its leading bytes) and returns every signature that matches at the longest matched header length. A single header can genuinely match more than one format, so callers should expect more than one `Result` back - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md).
 
+Passing fewer bytes never produces a wrong answer, only a less specific one: 532 bytes is the true minimum, reaching every fixed-offset signature in the embedded table, but a general-purpose caller reading its own byte buffer (rather than going through the `Stream`/`SpyAsync` overloads, which already read this much for you) should read 8192 bytes - that's what's needed for the ASF/WMA/WMV disambiguation below, and it's the number `Spy(Stream)` itself reads.
+
 `Spy` also takes a `Stream`, and that overload has an async twin, `SpyAsync(Stream, CancellationToken)`, for callers on an async path (e.g. reading a file upload in an ASP.NET Core handler) who don't want a blocking read on a thread-pool thread. There's no async overload of the `ReadOnlySpan<byte>` form - see [docs/adr/0014-async-overload-only-on-the-stream-api.md](docs/adr/0014-async-overload-only-on-the-stream-api.md).
 
 ### Dependency injection

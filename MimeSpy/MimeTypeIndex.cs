@@ -1,16 +1,13 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
 namespace MimeSpy;
 
 /// <summary>
-/// Parses the embedded mime-type table once and buckets it by file extension so a
-/// signature match's extensions can be resolved to their mime type(s) directly,
-/// instead of scanning every entry in the table.
+/// Parses the embedded Apache-style mime.types table once and buckets it by file
+/// extension so a signature match's extensions can be resolved to their mime
+/// type(s) directly, instead of scanning every entry in the table.
 /// </summary>
 internal static class MimeTypeIndex
 {
-    private const string ResourceName = "mimeTypes.json";
+    private const string ResourceName = "mime.types";
 
     private static readonly Dictionary<string, List<MimeType>> ByExtension;
 
@@ -42,26 +39,26 @@ internal static class MimeTypeIndex
     {
         using var stream = typeof(MimeTypeIndex).Assembly.GetManifestResourceStream(ResourceName)
             ?? throw new InvalidOperationException($"Embedded resource '{ResourceName}' not found.");
+        using var reader = new StreamReader(stream);
 
-        var raw = JsonSerializer.Deserialize<Dictionary<string, RawMimeType>>(stream)
-            ?? throw new InvalidOperationException($"Embedded resource '{ResourceName}' is empty or invalid.");
-
-        foreach (var (name, entry) in raw)
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
         {
-            // Most entries in the source table have no known file extension at all;
-            // they can never be reached from a signature match, so skip them.
-            if (entry.Extensions is not { Count: > 0 })
+            if (line.Length == 0 || line[0] == '#')
             {
                 continue;
             }
 
-            yield return new MimeType(name, [.. entry.Extensions]);
-        }
-    }
+            var tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
-    private sealed class RawMimeType
-    {
-        [JsonPropertyName("extensions")]
-        public List<string>? Extensions { get; init; }
+            // Most entries in the source table have no unique file extension at all;
+            // they can never be reached from a signature match, so skip them.
+            if (tokens.Length < 2)
+            {
+                continue;
+            }
+
+            yield return new MimeType(tokens[0], tokens[1..]);
+        }
     }
 }

@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace MimeSpy;
 
@@ -11,7 +9,7 @@ namespace MimeSpy;
 /// </summary>
 internal static class SignatureIndex
 {
-    private const string ResourceName = "file_signatures.json";
+    private const string ResourceName = "file_signatures.csv";
 
     private static readonly Dictionary<(int Offset, byte FirstByte), List<FileSignature>> Buckets;
     private static readonly int[] Offsets;
@@ -81,29 +79,38 @@ internal static class SignatureIndex
     {
         using var stream = typeof(SignatureIndex).Assembly.GetManifestResourceStream(ResourceName)
             ?? throw new InvalidOperationException($"Embedded resource '{ResourceName}' not found.");
+        using var reader = new StreamReader(stream);
 
-        var raw = JsonSerializer.Deserialize<RawSignatureFile>(stream)
-            ?? throw new InvalidOperationException($"Embedded resource '{ResourceName}' is empty or invalid.");
-
-        foreach (var entry in raw.FileSigs)
+        // Columns: File description, Header (hex), File extension, FileClass, Header
+        // offset, Trailer (hex). No header row. FileClass and Trailer aren't used by
+        // this library. Fields are never quoted or comma-escaped in the source data.
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
         {
-            // A signature with no usable byte pattern can never be matched against a
-            // real file, so it's dropped here rather than carried forward as null.
-            if (!TryParseHex(entry.HeaderHex, out var header))
+            if (line.Length == 0)
             {
                 continue;
             }
 
-            var extensions = ParseExtensions(entry.Extension);
+            var fields = line.Split(',');
+
+            // A signature with no usable byte pattern can never be matched against a
+            // real file, so it's dropped here rather than carried forward as null.
+            if (fields.Length < 5 || !TryParseHex(fields[1], out var header))
+            {
+                continue;
+            }
+
+            var extensions = ParseExtensions(fields[2]);
             var (mimeTypes, primaryMimeType) = ResolveMimeTypes(extensions);
 
             yield return new FileSignature(
                 header,
-                ParseOffset(entry.HeaderOffset),
+                ParseOffset(fields[4]),
                 extensions,
                 mimeTypes,
                 primaryMimeType,
-                entry.Description ?? string.Empty);
+                fields[0]);
         }
     }
 
@@ -199,26 +206,5 @@ internal static class SignatureIndex
         return [.. raw.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(e => !e.Equals("(none)", StringComparison.OrdinalIgnoreCase))
             .Select(e => e.ToLowerInvariant())];
-    }
-
-    private sealed class RawSignatureFile
-    {
-        [JsonPropertyName("filesigs")]
-        public List<RawSignature> FileSigs { get; init; } = [];
-    }
-
-    private sealed class RawSignature
-    {
-        [JsonPropertyName("File description")]
-        public string? Description { get; init; }
-
-        [JsonPropertyName("Header (hex)")]
-        public string? HeaderHex { get; init; }
-
-        [JsonPropertyName("File extension")]
-        public string? Extension { get; init; }
-
-        [JsonPropertyName("Header offset")]
-        public string? HeaderOffset { get; init; }
     }
 }

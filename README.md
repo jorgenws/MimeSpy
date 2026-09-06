@@ -32,9 +32,9 @@ Tests use xunit v3 on the Microsoft.Testing.Platform runner; `MimeSpy.Tests` bui
 ## Data
 
 File headers are from https://www.garykessler.net/software/index.html#filesigs.
-Extension to MIME type mapping is from: https://github.com/jshttp/mime-db
+Extension to MIME type mapping is from: https://svn.apache.org/repos/asf/httpd/httpd/trunk/docs/conf/mime.types
 
-Both tables are embedded as JSON resources under [Resources/](Resources/) and parsed once into in-memory indexes at first use - see [docs/adr/0003-signature-and-mimetype-data-as-embedded-json.md](docs/adr/0003-signature-and-mimetype-data-as-embedded-json.md).
+Both tables are embedded as resources under [Resources/](Resources/) in their native formats and parsed once into in-memory indexes at first use - see [docs/adr/0003](docs/adr/0003-signature-and-mimetype-data-as-embedded-json.md), [docs/adr/0005](docs/adr/0005-mimetype-table-sourced-from-apache-mimetypes.md), and [docs/adr/0006](docs/adr/0006-source-tables-embedded-in-native-format.md).
 
 ## License
 

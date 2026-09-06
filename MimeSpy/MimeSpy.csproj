@@ -7,8 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\Resources\file_signatures.json" LogicalName="file_signatures.json" Link="Resources\file_signatures.json" />
-    <EmbeddedResource Include="..\Resources\mimeTypes.json" LogicalName="mimeTypes.json" Link="Resources\mimeTypes.json" />
+    <EmbeddedResource Include="..\Resources\file_signatures.csv" LogicalName="file_signatures.csv" Link="Resources\file_signatures.csv" />
+    <EmbeddedResource Include="..\Resources\mime.types" LogicalName="mime.types" Link="Resources\mime.types" />
   </ItemGroup>
 
 </Project>

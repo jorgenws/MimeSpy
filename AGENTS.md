@@ -17,7 +17,7 @@ Use Fact instead of Theory if the Theory needs logic that is just there to force
 ## Architecture
 This is a one layer library.
 Implement `IContainerSniffer` for deeper investigation of formats that share a header byte-for-byte with unrelated formats (ZIP, OLE2/CFBF, Ogg, ASF, ...) - add an instance to the sniffer list in `MimeSpy.Spy()` and nothing else needs to change.
-Only `MimeSpy.Spy()`, `MimeSpy.SpyAsync()`, and the `Result` record in MimeSpy.cs are public. Everything else - `FileSignature`, `MimeType`, `MimeTypeIndex`, `SignatureIndex`, the `IContainerSniffer` implementations (`ZipContainerSniffer`, `Ole2ContainerSniffer`, `OggContainerSniffer`, `AsfContainerSniffer`) and their shared helpers (`WrappedExtensionNarrower`, `PrimaryMimeTypeRefiner`) - is `internal`. Keep it that way unless there's a real reason to grow the public surface.
+Only `MimeSpy.Spy()`, `MimeSpy.SpyAsync()`, `IMimeSpy` (the interface `MimeSpy` implements, for callers that want a mockable seam), and the `Result` record in MimeSpy.cs are public. Everything else - `FileSignature`, `MimeType`, `MimeTypeIndex`, `SignatureIndex`, the `IContainerSniffer` implementations (`ZipContainerSniffer`, `Ole2ContainerSniffer`, `OggContainerSniffer`, `AsfContainerSniffer`) and their shared helpers (`WrappedExtensionNarrower`, `PrimaryMimeTypeRefiner`) - is `internal`. Keep it that way unless there's a real reason to grow the public surface.
 
 ## XML comments
 The XML comments are for consumers of the library and need to be informative to them.

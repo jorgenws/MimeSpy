@@ -18,6 +18,16 @@ foreach (var result in results)
 
 `Spy` also takes a `Stream`, and that overload has an async twin, `SpyAsync(Stream, CancellationToken)`, for callers on an async path (e.g. reading a file upload in an ASP.NET Core handler) who don't want a blocking read on a thread-pool thread. There's no async overload of the `ReadOnlySpan<byte>` form - see [docs/adr/0014-async-overload-only-on-the-stream-api.md](docs/adr/0014-async-overload-only-on-the-stream-api.md).
 
+### Dependency injection
+
+MimeSpy has no constructor arguments and no mutable state - `Spy`/`SpyAsync` are safe to call concurrently from multiple requests on the same instance - so it only needs registering as a singleton, with no MimeSpy-specific extension method required:
+
+```csharp
+services.AddSingleton<IMimeSpy, MimeSpy>();
+```
+
+Consumers then take an `IMimeSpy` constructor dependency like any other singleton service. The interface exists purely as a mockable seam for callers whose own flow calls `Spy`/`SpyAsync` inline rather than taking a pre-computed `Result` as input - if your code already separates "call Spy at the boundary" from "react to the Result", you can construct `Result` directly in tests and don't need the interface at all.
+
 ### ZIP-based formats
 
 Plain ZIP archives and everything that's "just a zip" underneath (docx/xlsx/pptx, jar, apk, odt/odp/ott, epub, kmz...) share the same 4-byte header. MimeSpy peeks at the name - and, for OpenDocument files, the stored content - of the archive's first entry to narrow this down when those bytes are available, without ever requiring the file's central directory. See [docs/adr/0002-zip-disambiguation-reads-only-supplied-bytes.md](docs/adr/0002-zip-disambiguation-reads-only-supplied-bytes.md).

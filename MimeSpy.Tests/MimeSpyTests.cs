@@ -7,6 +7,16 @@ public class MimeSpyTests
     private readonly MimeSpy _sut = new();
 
     [Fact]
+    public void Spy_ViaIMimeSpyReference_MatchesSameAsConcreteType()
+    {
+        IMimeSpy sut = _sut;
+
+        var result = sut.Spy("%PDF-1.7 rest of file"u8);
+
+        Assert.Contains(result, r => r.Extensions.Contains("pdf"));
+    }
+
+    [Fact]
     public void Spy_EmptyInput_ReturnsNoMatches()
     {
         var result = _sut.Spy(ReadOnlySpan<byte>.Empty);

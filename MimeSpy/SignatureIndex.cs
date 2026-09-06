@@ -158,7 +158,7 @@ internal static class SignatureIndex
             return false;
         }
 
-        var tokens = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var tokens = raw!.Split([' '], StringSplitOptions.RemoveEmptyEntries);
         if (tokens.Length == 0)
         {
             return false;
@@ -188,12 +188,12 @@ internal static class SignatureIndex
         // take the leading digits and ignore the rest rather than dropping the whole entry.
         var span = raw.AsSpan().TrimStart();
         var digitCount = 0;
-        while (digitCount < span.Length && char.IsAsciiDigit(span[digitCount]))
+        while (digitCount < span.Length && span[digitCount] is >= '0' and <= '9')
         {
             digitCount++;
         }
 
-        return digitCount > 0 ? int.Parse(span[..digitCount]) : 0;
+        return digitCount > 0 ? int.Parse(span.Slice(0, digitCount).ToString()) : 0;
     }
 
     private static string[] ParseExtensions(string? raw)
@@ -203,7 +203,8 @@ internal static class SignatureIndex
             return [];
         }
 
-        return [.. raw.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        return [.. raw!.Split(['|'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(e => e.Trim())
             .Where(e => !e.Equals("(none)", StringComparison.OrdinalIgnoreCase))
             .Select(e => e.ToLowerInvariant())];
     }

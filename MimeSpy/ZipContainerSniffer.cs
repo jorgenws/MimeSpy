@@ -37,7 +37,7 @@ internal static class ZipContainerSniffer
             return null;
         }
 
-        var name = Encoding.ASCII.GetString(bytes[nameStart..nameEnd]);
+        var name = Encoding.ASCII.GetString(bytes.Slice(nameStart, nameLength).ToArray());
 
         switch (name)
         {
@@ -77,7 +77,7 @@ internal static class ZipContainerSniffer
             return null;
         }
 
-        var content = Encoding.ASCII.GetString(bytes[contentStart..(int)contentEnd]);
+        var content = Encoding.ASCII.GetString(bytes.Slice(contentStart, (int)contentEnd - contentStart).ToArray());
 
         return content.StartsWith("application/vnd.oasis.opendocument", StringComparison.Ordinal) ? "odt" : null;
     }

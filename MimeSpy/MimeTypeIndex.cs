@@ -58,7 +58,9 @@ internal static class MimeTypeIndex
                 continue;
             }
 
-            yield return new MimeType(tokens[0], tokens[1..]);
+            var extensions = new string[tokens.Length - 1];
+            Array.Copy(tokens, 1, extensions, 0, extensions.Length);
+            yield return new MimeType(tokens[0], extensions);
         }
     }
 }

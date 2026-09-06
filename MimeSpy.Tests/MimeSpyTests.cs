@@ -99,6 +99,30 @@ public class MimeSpyTests
     }
 
     [Fact]
+    public void Spy_PngHeader_PrimaryExtensionIsPng()
+    {
+        // A signature with only one extension trivially has that extension as
+        // its PrimaryExtension - no tie to resolve.
+        var result = _sut.Spy(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+
+        Assert.Contains(result, r => r.PrimaryExtension() == "png");
+    }
+
+    [Fact]
+    public void Spy_TiedFormatsWithNoKnownPreference_PrimaryExtensionIsNull()
+    {
+        // docx/pptx/xlsx are tied together with no basis to prefer one over
+        // the others (unlike doc/dot, xls/xla, ppt/pps - see docs/adr/0012),
+        // so PrimaryExtension must be null rather than an arbitrary guess.
+        var bytes = BuildZipWithFirstEntry("[Content_Types].xml", "<Types/>"u8.ToArray());
+
+        var result = _sut.Spy(bytes);
+
+        var single = Assert.Single(result);
+        Assert.Null(single.PrimaryExtension());
+    }
+
+    [Fact]
     public void Spy_JpegHeader_PrimaryMimeTypeIsMostRepresentedAmongAliasExtensions()
     {
         // The FF D8 FF signature lists extensions jfif|jpe|jpeg|jpg. Three of those
@@ -107,6 +131,21 @@ public class MimeSpyTests
         var result = _sut.Spy(new byte[] { 0xFF, 0xD8, 0xFF, 0x00 });
 
         Assert.Contains(result, r => r.PrimaryMimeType == "image/jpeg");
+    }
+
+    [Fact]
+    public void Spy_JpegHeaderTiedAcrossFourSpellings_PrimaryExtensionResolvesViaMimeTypesDeclaredOrder()
+    {
+        // jfif/jpe/jpeg/jpg are pure spelling variants of one format, not
+        // distinct formats - unlike docx/pptx/xlsx, three of these four
+        // extensions agree on image/jpeg (only jfif resolves elsewhere, to
+        // image/pjpeg), a real majority. mime.types lists this mime type as
+        // "image/jpeg jpeg jpg jpe" - jpeg first - so that's the resolved
+        // PrimaryExtension, derived from the same source data as
+        // PrimaryMimeType rather than a hardcoded office-only table.
+        var result = _sut.Spy(new byte[] { 0xFF, 0xD8, 0xFF, 0x00 });
+
+        Assert.Contains(result, r => r.PrimaryExtension() == "jpeg");
     }
 
     [Fact]
@@ -349,6 +388,52 @@ public class MimeSpyTests
         Assert.Contains(result, r => r.Extensions.Contains("docx"));
     }
 
+    [Theory]
+    [InlineData("WordDocument", "doc", "dot")]
+    [InlineData("Workbook", "xls", "xla")]
+    [InlineData("Book", "xls", "xla")]
+    [InlineData("PowerPoint Document", "ppt", "pps")]
+    public void Spy_Ole2FileWithRecognizedDirectoryEntryName_NarrowsToItsOwnFamily(string entryName, string primaryExtension, string siblingExtension)
+    {
+        var bytes = BuildOle2FileWithDirectoryEntryName(entryName);
+
+        var result = _sut.Spy(bytes);
+
+        var single = Assert.Single(result);
+        Assert.Contains(primaryExtension, single.Extensions);
+        Assert.Contains(siblingExtension, single.Extensions);
+        Assert.Equal(primaryExtension, single.PrimaryExtension());
+    }
+
+    [Fact]
+    public void Spy_Ole2FileWithUnrecognizedDirectoryEntryName_FallsBackToTiedMatches()
+    {
+        // A real CFB file (e.g. an MSI or a Visio drawing) whose directory
+        // entry names don't include any of the ones Ole2ContainerSniffer
+        // recognizes must fall back to the full tied set, not guess.
+        var bytes = BuildOle2FileWithDirectoryEntryName("SomeUnrelatedStream");
+
+        var result = _sut.Spy(bytes);
+
+        Assert.True(result.Count > 1, "expected the full, unnarrowed OLE2-family tie");
+        Assert.Contains(result, r => r.Extensions.Contains("doc"));
+    }
+
+    [Fact]
+    public void Spy_Ole2HeaderWithoutDirectorySectorBytesSupplied_FallsBackToTiedMatches()
+    {
+        // Only the 512-byte header made it into the buffer - the directory
+        // sector its own FAT chain points to is entirely out of reach. This
+        // must fall back gracefully, not throw or guess.
+        var full = BuildOle2FileWithDirectoryEntryName("WordDocument");
+        var headerOnly = full[..512];
+
+        var result = _sut.Spy(headerOnly);
+
+        Assert.True(result.Count > 1, "expected the full, unnarrowed OLE2-family tie");
+        Assert.Contains(result, r => r.Extensions.Contains("doc"));
+    }
+
     [Fact]
     public void Spy_OggWithTheoraCodec_PrimaryMimeTypeIsVideoOgg()
     {
@@ -583,6 +668,34 @@ public class MimeSpyTests
         }
 
         return stream.ToArray();
+    }
+
+    // A minimal but structurally valid CFB/OLE2 file: a 512-byte header (512-byte
+    // sectors, one FAT sector at sector 0, directory stream starting at sector 1),
+    // a FAT sector whose only entry that matters marks the directory stream as
+    // one sector long, and a directory sector whose first 128-byte entry carries
+    // the given name - enough for Ole2ContainerSniffer to reach it, nothing more.
+    private static byte[] BuildOle2FileWithDirectoryEntryName(string entryName)
+    {
+        const int sectorSize = 512;
+        var bytes = new byte[512 + (sectorSize * 2)]; // header + FAT sector + directory sector
+
+        new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 }.CopyTo(bytes, 0);
+        BitConverter.GetBytes((ushort)9).CopyTo(bytes, 30); // sector shift -> 512-byte sectors
+        BitConverter.GetBytes((uint)1).CopyTo(bytes, 48); // first directory sector location
+        BitConverter.GetBytes((uint)0).CopyTo(bytes, 76); // DIFAT[0] -> FAT sector is sector 0
+
+        // FAT sector (file bytes 512-1023): FAT[1] = ENDOFCHAIN, so the directory
+        // stream starting at sector 1 is exactly one sector long.
+        BitConverter.GetBytes(0xFFFFFFFE).CopyTo(bytes, 512 + (1 * 4));
+
+        // Directory sector (file bytes 1024-1535): one directory entry, name plus
+        // its length field (which counts the trailing null character MS-CFB requires).
+        var nameBytes = Encoding.Unicode.GetBytes(entryName);
+        nameBytes.CopyTo(bytes, 1024);
+        BitConverter.GetBytes((ushort)(nameBytes.Length + 2)).CopyTo(bytes, 1024 + 64);
+
+        return bytes;
     }
 
     private static byte[] BuildOggPage(byte[] codecIdentifier)

@@ -80,17 +80,19 @@ could be:
   Documented as a known gap rather than fixed - see the comment on
   `Spy_RealEpubFile_IsNotIdentifiedAsEpub_KnownGap` in `RealSampleFileTests.cs`.
 - `sample.doc`/`sample.xls`/`sample.ppt` (real LibreOffice output, all sharing the OLE2/
-  CFBF header `D0 CF 11 E0 A1 B1 1A E1`) all produce the exact same 17-way tied result -
-  `file_signatures.csv` carries offset-512 "subheader" signatures meant to disambiguate
-  doc/xls/ppt, but none of the specific ones match bytes LibreOffice's writer actually
-  produces at that offset, and the one generic pattern that does match (`FD FF FF FF`,
-  the "Thumbs.db subheader") is shorter than the main 8-byte header match, so it never
-  affects the result either way. A real fix means parsing the OLE2 directory sector to
-  find the distinctive stream name (`WordDocument`/`Workbook`/`PowerPoint Document`) -
-  confirmed, in these three fixtures, to sit near the *end* of the file, not in a small
-  fixed window near the start the way ASF's codec name is (docs/adr/0008) - so this isn't
-  a bounded string search, it's a real OLE2 reader. Documented as a known gap rather than
-  attempted - see `Spy_RealLegacyOfficeFile_IsNotDisambiguatedFromTheOle2Tie_KnownGap`.
+  CFBF header `D0 CF 11 E0 A1 B1 1A E1`) originally all produced the exact same 17-way
+  tied result - `file_signatures.csv` carries offset-512 "subheader" signatures that look
+  meant to disambiguate doc/xls/ppt, but none of the specific ones match bytes
+  LibreOffice's writer actually produces at that offset, and the one generic pattern that
+  does match (`FD FF FF FF`, the "Thumbs.db subheader") is shorter than the main 8-byte
+  header match, so it never affects the result either way. Fixed by `Ole2ContainerSniffer`
+  parsing the OLE2 directory sector to find the distinctive stream name
+  (`WordDocument`/`Workbook`/`PowerPoint Document`) - confirmed, in these three fixtures,
+  to sit near the *end* of the file, not in a small fixed window near the start the way
+  ASF's codec name is (docs/adr/0008), so this needed a real (if minimal) CFB/OLE2 reader
+  rather than a bounded string search - see docs/adr/0011. Each fixture now narrows to a
+  single result, still tied with its own template/add-in/slideshow sibling
+  (doc/dot, xls/xla, ppt/pps) since the CFB structure alone can't tell those apart.
 
 ### Not included
 

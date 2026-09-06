@@ -6,7 +6,7 @@ This is a C# library for detecting MIME types.
 We are using dotnet 10. Tell me if a newer is available.
 
 # Programming conventions
-We use switch expressions over switch statements where possible.
+We use switch expressions over switch statements.
 
 # Testing
 We use XUnit v3 on the Microsoft.Testing.Platform runner: `dotnet test`, or `dotnet run --project MimeSpy.Tests` (it builds as an executable).

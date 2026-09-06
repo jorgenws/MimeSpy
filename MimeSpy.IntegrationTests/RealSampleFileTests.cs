@@ -185,39 +185,33 @@ public class RealSampleFileTests
     }
 
     [Theory]
-    [InlineData("sample.doc")]
-    [InlineData("sample.xls")]
-    [InlineData("sample.ppt")]
-    public void Spy_RealLegacyOfficeFile_IsNotDisambiguatedFromTheOle2Tie_KnownGap(string fileName)
+    [InlineData("sample.doc", "doc", "dot")]
+    [InlineData("sample.xls", "xls", "xla")]
+    [InlineData("sample.ppt", "ppt", "pps")]
+    public void Spy_RealLegacyOfficeFile_NarrowsToItsOwnWordExcelOrPowerPointFamily(string fileName, string primaryExtension, string templateExtension)
     {
-        // A known gap, not an oversight: doc/xls/ppt (LibreOffice's real Word
-        // 97/Excel 97/PowerPoint 97 export filters) all share the exact same
-        // 8-byte OLE2/CFBF header (D0 CF 11 E0 A1 B1 1A E1) as dozens of
-        // unrelated formats in file_signatures.csv (Access, Visio, MSI,
-        // Publisher, ...), and none of it gets disambiguated - all three of
-        // these real files produce the exact same 17-result tied set. The
-        // table does carry offset-512 "subheader" signatures meant to break
-        // this tie (e.g. "Word document subheader", "Excel spreadsheet
-        // subheader_1..7", "PowerPoint presentation subheader_1..6") - checked
-        // by hand against these real files, none of the specific ones match;
-        // only the generic 4-byte "Thumbs.db subheader" prefix (FD FF FF FF)
-        // does, for all three alike, and it's shorter than the 8-byte main
-        // header match anyway so it never affects the result. Whatever MS
-        // Office version(s) those subheaders were captured from, LibreOffice's
-        // writer doesn't reproduce those exact bytes. A real fix would mean
-        // parsing the OLE2 directory sector to find the distinctive stream
-        // name ("WordDocument"/"Workbook"/"PowerPoint Document") - which,
-        // unlike ASF's codec name (docs/adr/0008), isn't in a small fixed
-        // window near the start of the file; its offset depends on the
-        // file's own sector layout (confirmed against these three fixtures:
-        // it sits within the last few hundred bytes each time, nowhere near a
-        // shared fixed offset). That's a real OLE2 reader, well beyond a
-        // bounded string search - not attempted here.
+        // doc/xls/ppt (LibreOffice's real Word 97/Excel 97/PowerPoint 97 export
+        // filters) all share the exact same 8-byte OLE2/CFBF header
+        // (D0 CF 11 E0 A1 B1 1A E1) as dozens of unrelated formats in
+        // file_signatures.csv (Access, Visio, MSI, Publisher, ...).
+        // Ole2ContainerSniffer resolves this the way Tika/POI do - not from any
+        // fixed-offset byte pattern (the table's offset-512 "subheader" rows
+        // don't match what LibreOffice's writer actually produces here), but by
+        // parsing the CFB directory sector and matching its distinctive stream
+        // name ("WordDocument"/"Workbook"/"PowerPoint Document") - see
+        // docs/adr/0011. That narrows all 17 originally-tied results down to a
+        // single one - still tied with its own template/add-in/slideshow
+        // sibling (dot/xla/pps), since that pair is structurally identical
+        // from the CFB side alone, the same way docx/pptx/xlsx stay tied to
+        // each other above.
         var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
 
         var result = _sut.Spy(bytes);
 
-        Assert.Equal(17, result.Count);
-        Assert.Contains(result, r => r.Extensions.Contains("doc") && r.Extensions.Contains("xls") && r.Extensions.Contains("ppt"));
+        var single = Assert.Single(result);
+        Assert.Equal(2, single.Extensions.Count);
+        Assert.Contains(primaryExtension, single.Extensions);
+        Assert.Contains(templateExtension, single.Extensions);
+        Assert.Equal(primaryExtension, single.PrimaryExtension());
     }
 }

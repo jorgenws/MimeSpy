@@ -25,7 +25,10 @@ public sealed class MimeSpy
     /// extra-field length the archiving tool controls - so no fixed byte count
     /// guarantees a narrowed result there. Supplying only 532 bytes just means that
     /// case falls back to the full tied list rather than a wrong guess; see
-    /// docs/adr/0002-zip-disambiguation-reads-only-supplied-bytes.md.
+    /// docs/adr/0002-zip-disambiguation-reads-only-supplied-bytes.md. Legacy OLE2/CFBF
+    /// Office formats (doc/xls/ppt) are the same story: <see cref="Ole2ContainerSniffer"/>
+    /// needs to reach the file's directory sector, whose location isn't bounded by any
+    /// fixed byte count either - see docs/adr/0011.
     /// </param>
     public IReadOnlyList<Result> Spy(ReadOnlySpan<byte> bytes)
     {
@@ -55,7 +58,11 @@ public sealed class MimeSpy
 
         if (results.Count > 1)
         {
-            var wrappedExtension = ZipContainerSniffer.SniffWrappedExtension(bytes);
+            // A file's header can only ever match one of these two container
+            // families' signature bytes (ZIP's "PK\x03\x04" vs OLE2/CFBF's
+            // "D0 CF 11 E0..."), so at most one of these two calls can ever
+            // return non-null - trying both costs nothing extra in practice.
+            var wrappedExtension = ZipContainerSniffer.SniffWrappedExtension(bytes) ?? Ole2ContainerSniffer.SniffWrappedExtension(bytes);
             if (wrappedExtension is not null)
             {
                 var narrowed = results.Where(r => r.Extensions.Contains(wrappedExtension)).ToList();
@@ -164,4 +171,67 @@ public sealed class MimeSpy
 /// <param name="MimeTypes">MIME types associated with this format.</param>
 /// <param name="PrimaryMimeType">The most representative MIME type for this format, if one is known.</param>
 /// <param name="Description">A human-readable description of the format.</param>
-public sealed record Result(IReadOnlyList<string> Extensions, IReadOnlyList<string> MimeTypes, string? PrimaryMimeType, string Description);
+public sealed record Result(IReadOnlyList<string> Extensions, IReadOnlyList<string> MimeTypes, string? PrimaryMimeType, string Description)
+{
+    /// <summary>
+    /// The most likely extension among <see cref="Extensions"/>, if one is known.
+    /// Resolved from the same alias data behind <see cref="PrimaryMimeType"/>
+    /// (Apache's mime.types, docs/adr/0005) rather than a hardcoded table: when this
+    /// result's extensions resolve to more than one mime type, <see cref="PrimaryMimeType"/>
+    /// is only trusted as an anchor here if it's a genuine majority among them - strictly
+    /// more of these extensions resolve to it than to any other single mime type (e.g.
+    /// jpe/jpeg/jpg all resolve to image/jpeg, doc/dot both resolve to application/msword).
+    /// A tie with no such majority (e.g. docx/pptx/xlsx, one extension apiece for three
+    /// distinct mime types) returns null rather than dressing up an arbitrary first-seen
+    /// pick as a considered answer - see docs/adr/0012. Once a majority mime type is
+    /// established, if more than one tied extension resolves to it (pure spelling
+    /// variants of the same format), the tie between those specifically is broken using
+    /// mime.types' own declared extension order for that mime type, on the assumption
+    /// that whichever spelling Apache lists first is the more canonical one.
+    /// </summary>
+    public string? PrimaryExtension()
+    {
+        if (Extensions.Count == 1)
+        {
+            return Extensions[0];
+        }
+
+        if (PrimaryMimeType is null)
+        {
+            return null;
+        }
+
+        var counts = new Dictionary<string, int>();
+        foreach (var extension in Extensions)
+        {
+            foreach (var mimeType in MimeTypeIndex.FindByExtension(extension))
+            {
+                counts[mimeType.Name] = counts.TryGetValue(mimeType.Name, out var count) ? count + 1 : 1;
+            }
+        }
+
+        var winningCount = counts.TryGetValue(PrimaryMimeType, out var winning) ? winning : 0;
+        var isMajorityWinner = winningCount > 0 && counts.All(pair => pair.Key == PrimaryMimeType || pair.Value < winningCount);
+        if (!isMajorityWinner)
+        {
+            return null;
+        }
+
+        var candidates = Extensions.Where(extension => MimeTypeIndex.FindByExtension(extension).Any(mimeType => mimeType.Name == PrimaryMimeType)).ToList();
+        if (candidates.Count <= 1)
+        {
+            return candidates.Count == 1 ? candidates[0] : null;
+        }
+
+        var canonicalOrder = MimeTypeIndex.FindByExtension(candidates[0]).First(mimeType => mimeType.Name == PrimaryMimeType).Extensions;
+        foreach (var extension in canonicalOrder)
+        {
+            if (candidates.Contains(extension))
+            {
+                return extension;
+            }
+        }
+
+        return candidates[0];
+    }
+}

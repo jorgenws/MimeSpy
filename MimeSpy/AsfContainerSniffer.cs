@@ -16,7 +16,7 @@ namespace MimeSpy;
 /// a heuristic, not a structural guarantee, but it's what an established
 /// production implementation does, and it's far cheaper than a real parse.
 /// </summary>
-internal static class AsfContainerSniffer
+internal sealed class AsfContainerSniffer : IContainerSniffer
 {
     /// <summary>
     /// How many leading bytes are searched for a codec-name marker. Matches Tika's
@@ -31,7 +31,12 @@ internal static class AsfContainerSniffer
     private static readonly byte[] Vc1AdvancedProfileMarker = Encoding.Unicode.GetBytes("VC-1 Advanced Profile");
     private static readonly byte[] Wmv2Marker = Encoding.Unicode.GetBytes("wmv2");
 
-    public static string? SniffMimeType(ReadOnlySpan<byte> bytes)
+    public IReadOnlyList<Result> Refine(ReadOnlySpan<byte> bytes, IReadOnlyList<Result> results)
+    {
+        return PrimaryMimeTypeRefiner.Apply(results, SniffMimeType(bytes));
+    }
+
+    private static string? SniffMimeType(ReadOnlySpan<byte> bytes)
     {
         var window = bytes.Length > SearchWindowSize ? bytes[..SearchWindowSize] : bytes;
 

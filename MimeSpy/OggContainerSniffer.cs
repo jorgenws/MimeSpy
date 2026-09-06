@@ -12,14 +12,19 @@ namespace MimeSpy;
 /// supplied to <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/>, matching how
 /// <see cref="ZipContainerSniffer"/> treats a possibly-truncated buffer.
 /// </summary>
-internal static class OggContainerSniffer
+internal sealed class OggContainerSniffer : IContainerSniffer
 {
     private const string ResourceName = "ogg_codec_identifiers.csv";
     private const int CodecIdentifierOffset = 28;
 
     private static readonly IReadOnlyList<(byte[] Identifier, string MimeType)> Codecs = LoadCodecs();
 
-    public static string? SniffMimeType(ReadOnlySpan<byte> bytes)
+    public IReadOnlyList<Result> Refine(ReadOnlySpan<byte> bytes, IReadOnlyList<Result> results)
+    {
+        return PrimaryMimeTypeRefiner.Apply(results, SniffMimeType(bytes));
+    }
+
+    private static string? SniffMimeType(ReadOnlySpan<byte> bytes)
     {
         if (bytes.Length <= CodecIdentifierOffset)
         {

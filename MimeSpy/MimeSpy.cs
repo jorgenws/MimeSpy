@@ -5,30 +5,29 @@ namespace MimeSpy;
 /// </summary>
 public sealed class MimeSpy
 {
+    // Order matters where two sniffers could both apply to the same tied results
+    // (e.g. Zip vs Ole2): whichever runs first and narrows leaves the rest a no-op,
+    // since a file's header can only ever belong to one of these format families.
+    private static readonly IReadOnlyList<IContainerSniffer> Sniffers =
+    [
+        new ZipContainerSniffer(),
+        new Ole2ContainerSniffer(),
+        new OggContainerSniffer(),
+        new AsfContainerSniffer(),
+    ];
+
     /// <summary>
     /// Identifies the file format(s) matching the leading bytes of a file.
     /// </summary>
     /// <param name="bytes">
-    /// The start of the file. 532 bytes is enough to reach every signature in the
-    /// embedded table (the deepest is a subheader at offset 512), so a shorter buffer
-    /// only risks missing a match, never an incorrect one - this method simply
-    /// skips any signature whose offset and length run past the end of what's supplied.
-    /// Content-based mime type refinement (<see cref="OggContainerSniffer"/>,
-    /// <see cref="AsfContainerSniffer"/>) similarly just falls back to the
-    /// table's default answer for that signature when its own bytes aren't
-    /// available - <see cref="AsfContainerSniffer.SearchWindowSize"/> is the
-    /// widest window any of them need, so a caller who wants every disambiguation
-    /// this library can do should supply at least that many bytes.
-    /// This bound doesn't extend to ZIP-based formats (docx/jar/apk/odt/...): narrowing
-    /// those relies on <see cref="ZipContainerSniffer"/> reading the archive's first
-    /// entry name and, for ODF, its stored "mimetype" content, and both sit past an
-    /// extra-field length the archiving tool controls - so no fixed byte count
-    /// guarantees a narrowed result there. Supplying only 532 bytes just means that
-    /// case falls back to the full tied list rather than a wrong guess; see
-    /// docs/adr/0002-zip-disambiguation-reads-only-supplied-bytes.md. Legacy OLE2/CFBF
-    /// Office formats (doc/xls/ppt) are the same story: <see cref="Ole2ContainerSniffer"/>
-    /// needs to reach the file's directory sector, whose location isn't bounded by any
-    /// fixed byte count either - see docs/adr/0011.
+    /// The start of the file. 532 bytes reaches every signature in the embedded
+    /// table (the deepest is a subheader at offset 512); a shorter buffer only
+    /// risks missing a match, never an incorrect one. Getting the most specific
+    /// answer for every format this library can disambiguate needs more: up to
+    /// <see cref="AsfContainerSniffer.SearchWindowSize"/> bytes for formats with a
+    /// fixed-size disambiguation window, and, for a few container formats (ZIP-based
+    /// and OLE2/CFBF), no fixed count at all - see docs/adr/0002 and docs/adr/0011.
+    /// Supplying fewer bytes never produces a wrong answer, only a less specific one.
     /// </param>
     public IReadOnlyList<Result> Spy(ReadOnlySpan<byte> bytes)
     {
@@ -56,63 +55,27 @@ public sealed class MimeSpy
             }
         }
 
-        if (results.Count > 1)
+        IReadOnlyList<Result> refined = results;
+        foreach (var sniffer in Sniffers)
         {
-            // A file's header can only ever match one of these two container
-            // families' signature bytes (ZIP's "PK\x03\x04" vs OLE2/CFBF's
-            // "D0 CF 11 E0..."), so at most one of these two calls can ever
-            // return non-null - trying both costs nothing extra in practice.
-            var wrappedExtension = ZipContainerSniffer.SniffWrappedExtension(bytes) ?? Ole2ContainerSniffer.SniffWrappedExtension(bytes);
-            if (wrappedExtension is not null)
-            {
-                var narrowed = results.Where(r => r.Extensions.Contains(wrappedExtension)).ToList();
-                if (narrowed.Count > 0)
-                {
-                    return narrowed;
-                }
-            }
+            refined = sniffer.Refine(bytes, refined);
         }
 
-        // Unlike the zip case above, neither Ogg nor ASF/WMA/WMV is ever tied
-        // against another signature - the ambiguity lives entirely inside one
-        // match's own MimeTypes (see docs/adr/0007 and docs/adr/0008) - so both
-        // of these run regardless of results.Count.
-        ApplySniffedPrimaryMimeType(results, OggContainerSniffer.SniffMimeType(bytes));
-        ApplySniffedPrimaryMimeType(results, AsfContainerSniffer.SniffMimeType(bytes));
-
-        return results;
-    }
-
-    // Only overrides a result that already lists sniffedMimeType as one of its
-    // candidates, so a sniffer can never affect a match it has nothing to do with.
-    private static void ApplySniffedPrimaryMimeType(List<Result> results, string? sniffedMimeType)
-    {
-        if (sniffedMimeType is null)
-        {
-            return;
-        }
-
-        for (var i = 0; i < results.Count; i++)
-        {
-            if (results[i].MimeTypes.Contains(sniffedMimeType))
-            {
-                results[i] = results[i] with { PrimaryMimeType = sniffedMimeType };
-            }
-        }
+        return refined;
     }
 
     /// <summary>
     /// Identifies the file format(s) matching the leading bytes of <paramref name="stream"/>.
     /// </summary>
     /// <param name="stream">
-    /// The stream to read from. Only as many leading bytes as <see cref="Spy(ReadOnlySpan{byte})"/>
-    /// can use are read - see its remarks for what that bound does and doesn't guarantee.
-    /// This is at least <see cref="AsfContainerSniffer.SearchWindowSize"/> bytes, since that's
-    /// the widest window any disambiguation step needs (wider than the signature table itself
-    /// requires), so a caller reading through this overload gets every disambiguation this
-    /// library can do without having to know that number itself.
-    /// If the stream is seekable, its position is restored afterwards, so this is a peek
-    /// rather than a consume; on a non-seekable stream the read bytes are gone from it.
+    /// The stream to read from. Enough leading bytes are read to give
+    /// <see cref="Spy(ReadOnlySpan{byte})"/> every fixed-size disambiguation window
+    /// this library uses - see its own <c>bytes</c> doc for what that does and
+    /// doesn't guarantee - so a caller reading through this overload gets the most
+    /// specific answer available without needing to know a byte count itself.
+    /// If the stream is seekable, its position is restored afterwards, so this is a
+    /// peek rather than a consume; on a non-seekable stream the read bytes are gone
+    /// from it.
     /// </param>
     public IReadOnlyList<Result> Spy(Stream stream)
     {

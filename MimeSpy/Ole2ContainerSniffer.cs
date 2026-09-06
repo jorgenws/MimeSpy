@@ -30,7 +30,7 @@ namespace MimeSpy;
 /// DIFAT-in-header reach above) just stops the scan and falls back to the full tied
 /// list rather than guessing.
 /// </summary>
-internal static class Ole2ContainerSniffer
+internal sealed class Ole2ContainerSniffer : IContainerSniffer
 {
     private const int HeaderSize = 512;
     private const int DirectoryEntrySize = 128;
@@ -51,7 +51,12 @@ internal static class Ole2ContainerSniffer
         ["PowerPoint Document"] = "ppt",
     };
 
-    public static string? SniffWrappedExtension(ReadOnlySpan<byte> bytes)
+    public IReadOnlyList<Result> Refine(ReadOnlySpan<byte> bytes, IReadOnlyList<Result> results)
+    {
+        return WrappedExtensionNarrower.Apply(results, SniffWrappedExtension(bytes));
+    }
+
+    private static string? SniffWrappedExtension(ReadOnlySpan<byte> bytes)
     {
         if (!TryReadHeader(bytes, out var header))
         {

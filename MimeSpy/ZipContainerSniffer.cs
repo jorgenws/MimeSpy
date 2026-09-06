@@ -14,12 +14,17 @@ namespace MimeSpy;
 /// it never seeks to the central directory at the end of the file, since callers may
 /// only have handed us a truncated prefix of it.
 /// </summary>
-internal static class ZipContainerSniffer
+internal sealed class ZipContainerSniffer : IContainerSniffer
 {
     private const int LocalFileHeaderSize = 30;
     private const ushort Stored = 0;
 
-    public static string? SniffWrappedExtension(ReadOnlySpan<byte> bytes)
+    public IReadOnlyList<Result> Refine(ReadOnlySpan<byte> bytes, IReadOnlyList<Result> results)
+    {
+        return WrappedExtensionNarrower.Apply(results, SniffWrappedExtension(bytes));
+    }
+
+    private static string? SniffWrappedExtension(ReadOnlySpan<byte> bytes)
     {
         var offset = 0;
 

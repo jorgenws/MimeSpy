@@ -105,7 +105,7 @@ public class MimeSpyTests
         // its PrimaryExtension - no tie to resolve.
         var result = _sut.Spy(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
 
-        Assert.Contains(result, r => r.PrimaryExtension() == "png");
+        Assert.Contains(result, r => r.PrimaryExtension == "png");
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class MimeSpyTests
         var result = _sut.Spy(bytes);
 
         var single = Assert.Single(result);
-        Assert.Null(single.PrimaryExtension());
+        Assert.Null(single.PrimaryExtension);
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class MimeSpyTests
         // PrimaryMimeType rather than a hardcoded office-only table.
         var result = _sut.Spy(new byte[] { 0xFF, 0xD8, 0xFF, 0x00 });
 
-        Assert.Contains(result, r => r.PrimaryExtension() == "jpeg");
+        Assert.Contains(result, r => r.PrimaryExtension == "jpeg");
     }
 
     [Fact]
@@ -402,7 +402,7 @@ public class MimeSpyTests
         var single = Assert.Single(result);
         Assert.Contains(primaryExtension, single.Extensions);
         Assert.Contains(siblingExtension, single.Extensions);
-        Assert.Equal(primaryExtension, single.PrimaryExtension());
+        Assert.Equal(primaryExtension, single.PrimaryExtension);
     }
 
     [Fact]

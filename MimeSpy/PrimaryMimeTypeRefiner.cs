@@ -4,9 +4,11 @@ namespace MimeSpy;
 /// Shared by every <see cref="IContainerSniffer"/> that disambiguates within a
 /// single tied match's own <see cref="Result.MimeTypes"/> list (e.g. Ogg's
 /// audio/video/application split or ASF's WMA/WMV split, docs/adr/0007 and
-/// docs/adr/0008) rather than across multiple tied rows. Only overrides a result
-/// that already lists the sniffed mime type as one of its candidates, so a sniffer
-/// can never affect a match it has nothing to do with.
+/// docs/adr/0008) rather than across multiple tied rows. Just attaches the raw
+/// sniffed value to every tied result as evidence (docs/adr/0013) - it's
+/// <see cref="Result.PrimaryMimeType"/> that decides whether a given result's own
+/// <see cref="Result.MimeTypes"/> actually backs it, so a sniffer can never affect
+/// a match it has nothing to do with.
 /// </summary>
 internal static class PrimaryMimeTypeRefiner
 {
@@ -17,18 +19,12 @@ internal static class PrimaryMimeTypeRefiner
             return results;
         }
 
-        List<Result>? refined = null;
-        for (var i = 0; i < results.Count; i++)
+        var refined = new List<Result>(results.Count);
+        foreach (var result in results)
         {
-            if (!results[i].MimeTypes.Contains(sniffedMimeType))
-            {
-                continue;
-            }
-
-            refined ??= [.. results];
-            refined[i] = refined[i] with { PrimaryMimeType = sniffedMimeType };
+            refined.Add(result with { SniffedMimeType = sniffedMimeType });
         }
 
-        return refined ?? results;
+        return refined;
     }
 }

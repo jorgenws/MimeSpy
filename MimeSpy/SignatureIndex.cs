@@ -127,8 +127,7 @@ internal static class SignatureIndex
                 continue;
             }
 
-            var (mimeTypes, primaryMimeType) = ResolveMimeTypes(remaining);
-            yield return signature with { Extensions = remaining, MimeTypes = mimeTypes, PrimaryMimeType = primaryMimeType };
+            yield return signature with { Extensions = remaining, MimeTypes = ResolveMimeTypes(remaining) };
         }
 
         foreach (var signature in supplementalSignatures)
@@ -164,51 +163,36 @@ internal static class SignatureIndex
             }
 
             var extensions = ParseExtensions(fields[2]);
-            var (mimeTypes, primaryMimeType) = ResolveMimeTypes(extensions);
 
             yield return new FileSignature(
                 header,
                 ParseOffset(fields[4]),
                 extensions,
-                mimeTypes,
-                primaryMimeType,
+                ResolveMimeTypes(extensions),
                 fields[0]);
         }
     }
 
-    private static (string[] MimeTypes, string? Primary) ResolveMimeTypes(string[] extensions)
+    // Which of these is the signature's "primary" mime type isn't decided here -
+    // that's request-time information (see docs/adr/0013), computed by Result itself
+    // from this same Extensions/MimeTypes data plus whatever a content sniffer found.
+    private static string[] ResolveMimeTypes(string[] extensions)
     {
-        var counts = new Dictionary<string, int>();
+        var seen = new HashSet<string>();
         var order = new List<string>();
 
         foreach (var extension in extensions)
         {
             foreach (var mimeType in MimeTypeIndex.FindByExtension(extension))
             {
-                if (counts.TryGetValue(mimeType.Name, out var count))
+                if (seen.Add(mimeType.Name))
                 {
-                    counts[mimeType.Name] = count + 1;
-                }
-                else
-                {
-                    counts[mimeType.Name] = 1;
                     order.Add(mimeType.Name);
                 }
             }
         }
 
-        if (order.Count == 0)
-        {
-            return ([], null);
-        }
-
-        // The mime type backed by the most of this signature's extension aliases
-        // (e.g. jpg/jpeg/jpe all resolving to image/jpeg, vs jfif alone resolving
-        // to image/pjpeg) is treated as the canonical one for the signature.
-        // OrderByDescending is a stable sort, so ties keep the first-seen mime type.
-        var primary = order.OrderByDescending(name => counts[name]).First();
-
-        return ([.. order], primary);
+        return [.. order];
     }
 
     private static bool TryParseHex(string? raw, out byte[] header)

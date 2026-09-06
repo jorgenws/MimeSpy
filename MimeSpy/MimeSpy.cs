@@ -51,7 +51,7 @@ public sealed class MimeSpy
         {
             if (match.Header.Length == longest)
             {
-                results.Add(new Result(match.Extensions, match.MimeTypes, match.PrimaryMimeType, match.Description));
+                results.Add(new Result(match.Extensions, match.MimeTypes, SniffedMimeType: null, match.Description));
             }
         }
 
@@ -132,10 +132,64 @@ public sealed class MimeSpy
 /// </summary>
 /// <param name="Extensions">File extensions associated with this format.</param>
 /// <param name="MimeTypes">MIME types associated with this format.</param>
-/// <param name="PrimaryMimeType">The most representative MIME type for this format, if one is known.</param>
+/// <param name="SniffedMimeType">
+/// The mime type actually sniffed from this file's content, if a container sniffer
+/// found one (docs/adr/0007, docs/adr/0008) - null for every format this library
+/// doesn't do content-based sniffing for. Feeds <see cref="PrimaryMimeType"/>; most
+/// callers want that instead of this.
+/// </param>
 /// <param name="Description">A human-readable description of the format.</param>
-public sealed record Result(IReadOnlyList<string> Extensions, IReadOnlyList<string> MimeTypes, string? PrimaryMimeType, string Description)
+public sealed record Result(IReadOnlyList<string> Extensions, IReadOnlyList<string> MimeTypes, string? SniffedMimeType, string Description)
 {
+    /// <summary>
+    /// The most representative MIME type for this format, if one is known. When
+    /// <see cref="SniffedMimeType"/> is set and is one of this result's own
+    /// <see cref="MimeTypes"/> candidates, that real, file-content-derived answer
+    /// wins outright. Otherwise falls back to a statistical default: whichever of
+    /// <see cref="MimeTypes"/> is backed by the most of <see cref="Extensions"/>'s
+    /// aliases (e.g. jpe/jpeg/jpg all resolve to image/jpeg, so it beats jfif's
+    /// image/pjpeg 3 to 1) - see docs/adr/0004 and docs/adr/0013.
+    /// </summary>
+    public string? PrimaryMimeType =>
+        SniffedMimeType is not null && MimeTypes.Contains(SniffedMimeType)
+            ? SniffedMimeType
+            : DefaultMimeTypeByExtensionAliasCount();
+
+    private string? DefaultMimeTypeByExtensionAliasCount()
+    {
+        var counts = CountMimeTypesByExtensionAlias();
+
+        // Ties keep whichever mime type is first in MimeTypes' own order (its
+        // first-seen-extension order from table load, docs/adr/0004).
+        string? winner = null;
+        var winningCount = 0;
+        foreach (var mimeType in MimeTypes)
+        {
+            var count = counts.TryGetValue(mimeType, out var c) ? c : 0;
+            if (count > winningCount)
+            {
+                winningCount = count;
+                winner = mimeType;
+            }
+        }
+
+        return winner;
+    }
+
+    private Dictionary<string, int> CountMimeTypesByExtensionAlias()
+    {
+        var counts = new Dictionary<string, int>();
+        foreach (var extension in Extensions)
+        {
+            foreach (var mimeType in MimeTypeIndex.FindByExtension(extension))
+            {
+                counts[mimeType.Name] = counts.TryGetValue(mimeType.Name, out var count) ? count + 1 : 1;
+            }
+        }
+
+        return counts;
+    }
+
     /// <summary>
     /// The most likely extension among <see cref="Extensions"/>, if one is known.
     /// Resolved from the same alias data behind <see cref="PrimaryMimeType"/>
@@ -152,49 +206,44 @@ public sealed record Result(IReadOnlyList<string> Extensions, IReadOnlyList<stri
     /// mime.types' own declared extension order for that mime type, on the assumption
     /// that whichever spelling Apache lists first is the more canonical one.
     /// </summary>
-    public string? PrimaryExtension()
+    public string? PrimaryExtension
     {
-        if (Extensions.Count == 1)
+        get
         {
-            return Extensions[0];
-        }
-
-        if (PrimaryMimeType is null)
-        {
-            return null;
-        }
-
-        var counts = new Dictionary<string, int>();
-        foreach (var extension in Extensions)
-        {
-            foreach (var mimeType in MimeTypeIndex.FindByExtension(extension))
+            if (Extensions.Count == 1)
             {
-                counts[mimeType.Name] = counts.TryGetValue(mimeType.Name, out var count) ? count + 1 : 1;
+                return Extensions[0];
             }
-        }
 
-        var winningCount = counts.TryGetValue(PrimaryMimeType, out var winning) ? winning : 0;
-        var isMajorityWinner = winningCount > 0 && counts.All(pair => pair.Key == PrimaryMimeType || pair.Value < winningCount);
-        if (!isMajorityWinner)
-        {
-            return null;
-        }
-
-        var candidates = Extensions.Where(extension => MimeTypeIndex.FindByExtension(extension).Any(mimeType => mimeType.Name == PrimaryMimeType)).ToList();
-        if (candidates.Count <= 1)
-        {
-            return candidates.Count == 1 ? candidates[0] : null;
-        }
-
-        var canonicalOrder = MimeTypeIndex.FindByExtension(candidates[0]).First(mimeType => mimeType.Name == PrimaryMimeType).Extensions;
-        foreach (var extension in canonicalOrder)
-        {
-            if (candidates.Contains(extension))
+            if (PrimaryMimeType is null)
             {
-                return extension;
+                return null;
             }
-        }
 
-        return candidates[0];
+            var counts = CountMimeTypesByExtensionAlias();
+            var winningCount = counts.TryGetValue(PrimaryMimeType, out var winning) ? winning : 0;
+            var isMajorityWinner = winningCount > 0 && counts.All(pair => pair.Key == PrimaryMimeType || pair.Value < winningCount);
+            if (!isMajorityWinner)
+            {
+                return null;
+            }
+
+            var candidates = Extensions.Where(extension => MimeTypeIndex.FindByExtension(extension).Any(mimeType => mimeType.Name == PrimaryMimeType)).ToList();
+            if (candidates.Count <= 1)
+            {
+                return candidates.Count == 1 ? candidates[0] : null;
+            }
+
+            var canonicalOrder = MimeTypeIndex.FindByExtension(candidates[0]).First(mimeType => mimeType.Name == PrimaryMimeType).Extensions;
+            foreach (var extension in canonicalOrder)
+            {
+                if (candidates.Contains(extension))
+                {
+                    return extension;
+                }
+            }
+
+            return candidates[0];
+        }
     }
 }

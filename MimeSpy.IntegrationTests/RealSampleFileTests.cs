@@ -212,6 +212,6 @@ public class RealSampleFileTests
         Assert.Equal(2, single.Extensions.Count);
         Assert.Contains(primaryExtension, single.Extensions);
         Assert.Contains(templateExtension, single.Extensions);
-        Assert.Equal(primaryExtension, single.PrimaryExtension());
+        Assert.Equal(primaryExtension, single.PrimaryExtension);
     }
 }

@@ -227,6 +227,127 @@ public class MimeSpyTests
     }
 
     [Fact]
+    public void Spy_OggWithTheoraCodec_PrimaryMimeTypeIsVideoOgg()
+    {
+        // Without content sniffing this would default to audio/ogg, since "ogg"
+        // and "oga" both resolve there while "ogv" (Theora's usual extension)
+        // resolves to video/ogg alone - alias count alone picks the wrong one
+        // for an actual video file.
+        var bytes = BuildOggPage([0x80, 0x74, 0x68, 0x65, 0x6F, 0x72, 0x61]); // "\x80theora"
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "video/ogg");
+    }
+
+    [Fact]
+    public void Spy_OggWithKateCodec_PrimaryMimeTypeIsApplicationOgg()
+    {
+        var bytes = BuildOggPage([0x80, 0x6B, 0x61, 0x74, 0x65, 0x00, 0x00, 0x00, 0x00]); // "\x80kate\0\0\0\0"
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "application/ogg");
+    }
+
+    [Fact]
+    public void Spy_OggWithVorbisCodec_PrimaryMimeTypeIsAudioOgg()
+    {
+        var bytes = BuildOggPage([0x01, 0x76, 0x6F, 0x72, 0x62, 0x69, 0x73]); // "\x01vorbis"
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "audio/ogg");
+    }
+
+    [Fact]
+    public void Spy_OggTruncatedBeforeCodecIdentifier_FallsBackToAliasCountDefault()
+    {
+        // Only the 8-byte "OggS" signature itself is available - not enough to
+        // reach the codec identification packet at offset 28. This must fall
+        // back to the existing alias-count answer rather than throw or guess.
+        var bytes = new byte[] { 0x4F, 0x67, 0x67, 0x53, 0x00, 0x02, 0x00, 0x00 };
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "audio/ogg");
+    }
+
+    [Fact]
+    public void Spy_OggWithUnrecognizedCodec_FallsBackToAliasCountDefault()
+    {
+        var bytes = BuildOggPage("unknown!"u8.ToArray());
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "audio/ogg");
+    }
+
+    [Theory]
+    [InlineData("Windows Media Video")]
+    [InlineData("VC-1 Advanced Profile")]
+    [InlineData("wmv2")]
+    public void Spy_AsfWithVideoCodecMarker_PrimaryMimeTypeIsWmv(string marker)
+    {
+        // Without content sniffing this would default to video/x-ms-asf for
+        // every ASF/WMA/WMV file, audio-only WMA included - alias count can't
+        // tell them apart since each extension resolves to exactly one mime
+        // type of its own.
+        var bytes = BuildAsfFile(marker);
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "video/x-ms-wmv");
+    }
+
+    [Fact]
+    public void Spy_AsfWithAudioCodecMarker_PrimaryMimeTypeIsWma()
+    {
+        var bytes = BuildAsfFile("Windows Media Audio");
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "audio/x-ms-wma");
+    }
+
+    [Fact]
+    public void Spy_AsfWithBothAudioAndVideoMarkers_PrimaryMimeTypeIsWmv()
+    {
+        // A real WMV typically carries both a video and an audio stream, so its
+        // codec list contains both marker strings. Video wins, matching Tika's
+        // WMV magic having a higher priority than its WMA magic.
+        var bytes = BuildAsfFile("Windows Media Audio and Windows Media Video");
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "video/x-ms-wmv");
+    }
+
+    [Fact]
+    public void Spy_AsfWithNoRecognizedCodecMarker_FallsBackToAliasCountDefault()
+    {
+        var bytes = BuildAsfFile("nothing recognizable here");
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "video/x-ms-asf");
+    }
+
+    [Fact]
+    public void Spy_AsfCodecMarkerBeyondSearchWindow_FallsBackToAliasCountDefault()
+    {
+        // The marker is real, but it sits past AsfContainerSniffer's 8192-byte
+        // search window, so it must not be found - this isn't allowed to scan
+        // the whole file.
+        var padding = new byte[8192];
+        var bytes = BuildAsfFile("Windows Media Audio", padding);
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.PrimaryMimeType == "video/x-ms-asf");
+    }
+
+    [Fact]
     public void Spy_Stream_MatchesSameAsEquivalentBytes()
     {
         using var stream = new MemoryStream("%PDF-1.7 rest of file"u8.ToArray());
@@ -306,5 +427,36 @@ public class MimeSpyTests
         content.CopyTo(header, 30 + nameBytes.Length);
 
         return header;
+    }
+
+    private static byte[] BuildOggPage(byte[] codecIdentifier)
+    {
+        var page = new byte[28 + codecIdentifier.Length];
+
+        "OggS"u8.CopyTo(page);
+        page[4] = 0x00; // stream structure version
+        page[5] = 0x02; // header type flags: beginning of stream
+        // Granule position (6-13), serial number (14-17), sequence number
+        // (18-21), and checksum (22-25) are left at 0 - unused by the sniffer.
+        page[26] = 0x01; // page_segments: one segment
+        page[27] = (byte)codecIdentifier.Length; // that segment's length
+
+        codecIdentifier.CopyTo(page, 28);
+
+        return page;
+    }
+
+    private static byte[] BuildAsfFile(string codecNameMarker, byte[]? leadingPadding = null)
+    {
+        var header = new byte[] { 0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11 };
+        var padding = leadingPadding ?? [];
+        var markerBytes = Encoding.Unicode.GetBytes(codecNameMarker);
+
+        var bytes = new byte[header.Length + padding.Length + markerBytes.Length];
+        header.CopyTo(bytes, 0);
+        padding.CopyTo(bytes, header.Length);
+        markerBytes.CopyTo(bytes, header.Length + padding.Length);
+
+        return bytes;
     }
 }

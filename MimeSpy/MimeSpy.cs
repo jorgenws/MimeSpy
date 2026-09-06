@@ -11,8 +11,14 @@ public sealed class MimeSpy
     /// <param name="bytes">
     /// The start of the file. 532 bytes is enough to reach every signature in the
     /// embedded table (the deepest is a subheader at offset 512), so a shorter buffer
-    /// only risks missing a match, never an incorrect one - <see cref="Spy(ReadOnlySpan{byte})"/> simply
+    /// only risks missing a match, never an incorrect one - this method simply
     /// skips any signature whose offset and length run past the end of what's supplied.
+    /// Content-based mime type refinement (<see cref="OggContainerSniffer"/>,
+    /// <see cref="AsfContainerSniffer"/>) similarly just falls back to the
+    /// table's default answer for that signature when its own bytes aren't
+    /// available - <see cref="AsfContainerSniffer.SearchWindowSize"/> is the
+    /// widest window any of them need, so a caller who wants every disambiguation
+    /// this library can do should supply at least that many bytes.
     /// This bound doesn't extend to ZIP-based formats (docx/jar/apk/odt/...): narrowing
     /// those relies on <see cref="ZipContainerSniffer"/> reading the archive's first
     /// entry name and, for ODF, its stored "mimetype" content, and both sit past an
@@ -60,7 +66,32 @@ public sealed class MimeSpy
             }
         }
 
+        // Unlike the zip case above, neither Ogg nor ASF/WMA/WMV is ever tied
+        // against another signature - the ambiguity lives entirely inside one
+        // match's own MimeTypes (see docs/adr/0007 and docs/adr/0008) - so both
+        // of these run regardless of results.Count.
+        ApplySniffedPrimaryMimeType(results, OggContainerSniffer.SniffMimeType(bytes));
+        ApplySniffedPrimaryMimeType(results, AsfContainerSniffer.SniffMimeType(bytes));
+
         return results;
+    }
+
+    // Only overrides a result that already lists sniffedMimeType as one of its
+    // candidates, so a sniffer can never affect a match it has nothing to do with.
+    private static void ApplySniffedPrimaryMimeType(List<Result> results, string? sniffedMimeType)
+    {
+        if (sniffedMimeType is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < results.Count; i++)
+        {
+            if (results[i].MimeTypes.Contains(sniffedMimeType))
+            {
+                results[i] = results[i] with { PrimaryMimeType = sniffedMimeType };
+            }
+        }
     }
 
     /// <summary>
@@ -69,6 +100,10 @@ public sealed class MimeSpy
     /// <param name="stream">
     /// The stream to read from. Only as many leading bytes as <see cref="Spy(ReadOnlySpan{byte})"/>
     /// can use are read - see its remarks for what that bound does and doesn't guarantee.
+    /// This is at least <see cref="AsfContainerSniffer.SearchWindowSize"/> bytes, since that's
+    /// the widest window any disambiguation step needs (wider than the signature table itself
+    /// requires), so a caller reading through this overload gets every disambiguation this
+    /// library can do without having to know that number itself.
     /// If the stream is seekable, its position is restored afterwards, so this is a peek
     /// rather than a consume; on a non-seekable stream the read bytes are gone from it.
     /// </param>
@@ -80,12 +115,13 @@ public sealed class MimeSpy
         }
 
         var startPosition = stream.CanSeek ? stream.Position : -1;
+        var readSize = Math.Max(SignatureIndex.MaxHeaderReach, AsfContainerSniffer.SearchWindowSize);
 
 #if NETSTANDARD2_0
-        var array = new byte[SignatureIndex.MaxHeaderReach];
+        var array = new byte[readSize];
         var totalRead = ReadAtLeast(stream, array);
 #else
-        Span<byte> buffer = stackalloc byte[SignatureIndex.MaxHeaderReach];
+        Span<byte> buffer = stackalloc byte[readSize];
         var totalRead = stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
 #endif
 

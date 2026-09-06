@@ -1,0 +1,24 @@
+# Ogg carries audio, video, and non-audio/video payloads (Vorbis, Opus, Speex,
+# FLAC, Theora, OGM, Skeleton, Kate...) inside an identical "OggS" container,
+# so the outer signature alone can't say whether a file is audio/ogg,
+# video/ogg, or application/ogg - only the codec identification packet inside
+# it can. That packet is the first thing after the page header of the first
+# page ("OggS", 22 more header bytes, then a 1-byte segment count and, for the
+# common case of a single-segment first page, one segment-length byte) -
+# i.e. byte offset 28 from the start of the file. The patterns below are the
+# fixed byte sequences each codec writes at the start of that packet, mapped
+# to the mime type OggContainerSniffer should report when one is found there.
+#
+# Sourced from file(1)'s libmagic rules, magic/Magdir/vorbis:
+# https://raw.githubusercontent.com/file/file/master/magic/Magdir/vorbis
+# (retrieved 2026-09-06, $File: vorbis,v 1.26 2020/08/22 18:30:55 christos Exp $)
+#
+# Description,HeaderHex,MimeType
+Vorbis audio,01 76 6F 72 62 69 73,audio/ogg
+Opus audio,4F 70 75 73 48 65 61 64,audio/ogg
+Speex audio,53 70 65 65 78 20 20 20,audio/ogg
+FLAC audio,7F 46 4C 41 43,audio/ogg
+Theora video,80 74 68 65 6F 72 61,video/ogg
+OGM video,01 76 69 64 65 6F 00 00 00,video/ogg
+Skeleton,66 69 73 68 65 61 64 00,video/ogg
+Kate (karaoke/text),80 6B 61 74 65 00 00 00 00,application/ogg

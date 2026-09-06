@@ -26,6 +26,7 @@
   <ItemGroup>
     <EmbeddedResource Include="..\Resources\file_signatures.csv" LogicalName="file_signatures.csv" Link="Resources\file_signatures.csv" />
     <EmbeddedResource Include="..\Resources\mime.types" LogicalName="mime.types" Link="Resources\mime.types" />
+    <EmbeddedResource Include="..\Resources\ogg_codec_identifiers.csv" LogicalName="ogg_codec_identifiers.csv" Link="Resources\ogg_codec_identifiers.csv" />
     <None Include="..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

@@ -58,3 +58,6 @@ nunit-*.xml
 
 # Claude scratch directory
 .scratch/
+
+# Handover documents (not part of the project, not for commit)
+.handover/

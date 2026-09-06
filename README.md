@@ -35,7 +35,9 @@ dotnet build
 dotnet test
 ```
 
-Tests use xunit v3 on the Microsoft.Testing.Platform runner; `MimeSpy.Tests` builds as an executable, so `dotnet run --project MimeSpy.Tests` also works.
+Tests use xunit v3 on the Microsoft.Testing.Platform runner; both test projects build as executables, so `dotnet run --project MimeSpy.Tests` (or `MimeSpy.IntegrationTests`) also works.
+
+`MimeSpy.Tests` is mostly hand-built byte arrays covering specific signature-matching and disambiguation rules. `MimeSpy.IntegrationTests` runs the same `Spy()` API against real, genuinely-encoded sample files - one per mainstream format - committed under `MimeSpy.IntegrationTests/Fixtures/`; see that project's README for where each one came from.
 
 ## Data
 
@@ -45,6 +47,8 @@ Ogg codec identification patterns are from `file(1)`'s libmagic rules: https://r
 ASF/WMA/WMV codec-name markers are from Apache Tika's mime-type table: https://raw.githubusercontent.com/apache/tika/main/tika-core/src/main/resources/org/apache/tika/mime/tika-mimetypes.xml
 
 The first three tables are embedded as resources under [Resources/](Resources/) in their native formats and parsed once into in-memory indexes at first use - see [docs/adr/0003](docs/adr/0003-signature-and-mimetype-data-as-embedded-json.md), [docs/adr/0005](docs/adr/0005-mimetype-table-sourced-from-apache-mimetypes.md), [docs/adr/0006](docs/adr/0006-source-tables-embedded-in-native-format.md), and [docs/adr/0007](docs/adr/0007-ogg-mime-type-resolved-by-content-sniffing.md). The ASF markers are few enough to live as constants directly in `AsfContainerSniffer` rather than a data file - see [docs/adr/0008](docs/adr/0008-asf-mime-type-resolved-by-codec-name-search.md).
+
+`Resources/file_signatures_supplemental.csv` holds signature-table rows MimeSpy adds on top of Gary Kessler's table (same format, no header row) rather than editing them into `file_signatures.csv` directly, so that file stays a straight, overwritable copy of the upstream source - see [docs/adr/0010](docs/adr/0010-supplemental-signature-file-for-additions.md).
 
 ## License
 

@@ -1,0 +1,4 @@
+# Real sample files used as test fixtures must round-trip byte-for-byte -
+# never let git normalize line endings or diff/merge them as text.
+MimeSpy.Tests/Fixtures/** binary
+MimeSpy.IntegrationTests/Fixtures/** binary

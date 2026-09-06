@@ -11,6 +11,12 @@ internal static class SignatureIndex
 {
     private const string ResourceName = "file_signatures.csv";
 
+    // file_signatures.csv is a straight copy of Gary Kessler's table (see the root
+    // README) and needs to stay overwritable by a newer copy of it without losing
+    // anything MimeSpy adds on top - so additions live here instead, in the same
+    // format, merged in at load time. See docs/adr/0010.
+    private const string SupplementalResourceName = "file_signatures_supplemental.csv";
+
     private static readonly Dictionary<(int Offset, byte FirstByte), List<FileSignature>> Buckets;
     private static readonly int[] Offsets;
 
@@ -77,8 +83,64 @@ internal static class SignatureIndex
 
     private static IEnumerable<FileSignature> LoadSignatures()
     {
-        using var stream = typeof(SignatureIndex).Assembly.GetManifestResourceStream(ResourceName)
-            ?? throw new InvalidOperationException($"Embedded resource '{ResourceName}' not found.");
+        var baseSignatures = LoadSignatures(ResourceName).ToList();
+        var supplementalSignatures = LoadSignatures(SupplementalResourceName).ToList();
+
+        return Merge(baseSignatures, supplementalSignatures);
+    }
+
+    /// <summary>
+    /// A supplemental row sharing a base row's exact header bytes and offset claims
+    /// any of its own extensions away from that base row, rather than just tying
+    /// alongside it. This is how the upstream "OpenDocument template" row - one row,
+    /// bundling odt/odp/ott as if they were interchangeable aliases the way jpg/jpeg
+    /// genuinely are - gets split into three independently reachable extensions
+    /// (plus the previously entirely-missing ods/ots/otp) without ever editing
+    /// file_signatures.csv. See docs/adr/0010.
+    /// </summary>
+    private static IEnumerable<FileSignature> Merge(List<FileSignature> baseSignatures, List<FileSignature> supplementalSignatures)
+    {
+        foreach (var signature in baseSignatures)
+        {
+            var claimed = new HashSet<string>(supplementalSignatures
+                .Where(s => s.HeaderOffset == signature.HeaderOffset && s.Header.SequenceEqual(signature.Header))
+                .SelectMany(s => s.Extensions));
+
+            if (claimed.Count == 0)
+            {
+                yield return signature;
+                continue;
+            }
+
+            var remaining = signature.Extensions.Where(e => !claimed.Contains(e)).ToArray();
+            if (remaining.Length == signature.Extensions.Length)
+            {
+                yield return signature;
+                continue;
+            }
+
+            if (remaining.Length == 0)
+            {
+                // Every extension this row had was claimed by the supplemental
+                // file - it has nothing left to reach, so drop it rather than
+                // keeping a hollowed-out tie member around.
+                continue;
+            }
+
+            var (mimeTypes, primaryMimeType) = ResolveMimeTypes(remaining);
+            yield return signature with { Extensions = remaining, MimeTypes = mimeTypes, PrimaryMimeType = primaryMimeType };
+        }
+
+        foreach (var signature in supplementalSignatures)
+        {
+            yield return signature;
+        }
+    }
+
+    private static IEnumerable<FileSignature> LoadSignatures(string resourceName)
+    {
+        using var stream = typeof(SignatureIndex).Assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"Embedded resource '{resourceName}' not found.");
         using var reader = new StreamReader(stream);
 
         // Columns: File description, Header (hex), File extension, FileClass, Header

@@ -11,6 +11,7 @@ We use switch expressions over switch statements where possible.
 # Testing
 We use XUnit v3 on the Microsoft.Testing.Platform runner: `dotnet test`, or `dotnet run --project MimeSpy.Tests` (it builds as an executable).
 We prefer Theory over duplicate setups.
+`MimeSpy.Tests` is unit tests (mostly hand-built byte arrays). `MimeSpy.IntegrationTests` runs `Spy()` against real, genuinely-encoded sample files under its `Fixtures/` folder - see that project's README before adding or regenerating one.
 
 ## Architecture
 This is a one layer library. Don't make it complicated.

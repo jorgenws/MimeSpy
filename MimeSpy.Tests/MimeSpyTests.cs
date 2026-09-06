@@ -187,15 +187,43 @@ public class MimeSpyTests
         Assert.DoesNotContain(result, r => r.Extensions.Contains("zip"));
     }
 
-    [Fact]
-    public void Spy_ZipStoredMimetypeEntryIsOpenDocument_NarrowsToOdf()
+    [Theory]
+    [InlineData("application/vnd.oasis.opendocument.text", "odt")]
+    [InlineData("application/vnd.oasis.opendocument.text-template", "ott")]
+    [InlineData("application/vnd.oasis.opendocument.spreadsheet", "ods")]
+    [InlineData("application/vnd.oasis.opendocument.spreadsheet-template", "ots")]
+    [InlineData("application/vnd.oasis.opendocument.presentation", "odp")]
+    [InlineData("application/vnd.oasis.opendocument.presentation-template", "otp")]
+    public void Spy_ZipStoredMimetypeEntryIsOpenDocumentSubtype_NarrowsToExactlyThatExtension(string mimeType, string expectedExtension)
     {
-        var bytes = BuildZipWithFirstEntry("mimetype", "application/vnd.oasis.opendocument.text"u8.ToArray(), stored: true);
+        // file_signatures.csv's own "OpenDocument template" row used to tie
+        // odt/odp/ott together as one row's Extensions list, as if they were
+        // interchangeable aliases the way jpg/jpeg genuinely are - and ods/
+        // ots/otp had no row at all. The supplemental file's merge (docs/adr/
+        // 0010) replaces that one bundled row with six independent,
+        // single-extension ones, so each real subtype narrows to exactly
+        // itself now - not a three-way (or, for ods/ots/otp, a zero-way) tie.
+        var bytes = BuildZipWithFirstEntry("mimetype", Encoding.ASCII.GetBytes(mimeType), stored: true);
 
         var result = _sut.Spy(bytes);
 
+        var single = Assert.Single(result);
+        Assert.Equal([expectedExtension], single.Extensions);
+    }
+
+    [Fact]
+    public void Spy_ZipStoredMimetypeEntryIsUnrecognizedOpenDocumentSubtype_FallsBackToTiedMatches()
+    {
+        // "chart" isn't one of the ODF sub-formats this table knows how to map
+        // to an extension - guessing "odt" just because the string starts with
+        // "application/vnd.oasis.opendocument" (the old behavior) would be
+        // wrong here, so this must fall back rather than guess.
+        var bytes = BuildZipWithFirstEntry("mimetype", "application/vnd.oasis.opendocument.chart"u8.ToArray(), stored: true);
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.Extensions.Contains("zip"));
         Assert.Contains(result, r => r.Extensions.Contains("odt"));
-        Assert.DoesNotContain(result, r => r.Extensions.Contains("zip"));
     }
 
     [Fact]
@@ -224,6 +252,101 @@ public class MimeSpyTests
         Assert.Contains(result, r => r.Extensions.Contains("zip"));
         Assert.Contains(result, r => r.Extensions.Contains("docx"));
         Assert.Contains(result, r => r.Extensions.Contains("jar"));
+    }
+
+    [Fact]
+    public void Spy_ZipFirstEntryIsEmptyDirectoryPlaceholder_SkipsItAndNarrowsOnTheNextEntry()
+    {
+        // Real OOXML writers commonly emit a "_rels/" directory entry before
+        // "[Content_Types].xml" (see docs/adr/0009) - a zero-length "name/"
+        // entry like this carries no information of its own, so it shouldn't
+        // block narrowing on whatever comes right after it.
+        var bytes = BuildZipWithEntries(
+            ("_rels/", [], true),
+            ("[Content_Types].xml", "<Types/>"u8.ToArray(), false));
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.Extensions.Contains("docx"));
+        Assert.DoesNotContain(result, r => r.Extensions.Contains("jar"));
+    }
+
+    [Fact]
+    public void Spy_ZipFirstEntryIsMetaInfDirectoryPlaceholder_SkipsItAndNarrowsToJar()
+    {
+        // The real jar tool writes "META-INF/" as its own directory entry
+        // before "META-INF/MANIFEST.MF" - see docs/adr/0009.
+        var bytes = BuildZipWithEntries(
+            ("META-INF/", [], true),
+            ("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n"u8.ToArray(), false));
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.Extensions.Contains("jar"));
+        Assert.DoesNotContain(result, r => r.Extensions.Contains("zip"));
+    }
+
+    [Fact]
+    public void Spy_ZipMultipleLeadingDirectoryPlaceholders_SkipsAllOfThemAndNarrows()
+    {
+        var bytes = BuildZipWithEntries(
+            ("a/", [], true),
+            ("a/b/", [], true),
+            ("[Content_Types].xml", "<Types/>"u8.ToArray(), false));
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.Extensions.Contains("docx"));
+    }
+
+    [Fact]
+    public void Spy_ZipDirectoryNamedEntryWithNonZeroSize_IsNotTreatedAsAPlaceholder()
+    {
+        // A "name/"-suffixed entry is only skipped as a directory placeholder
+        // when it's actually empty - this isn't a real ZIP shape, but nothing
+        // should skip past an entry that carries content just because its name
+        // happens to end in "/".
+        var bytes = BuildZipWithEntries(("weird/", "not actually empty"u8.ToArray(), false));
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.Extensions.Contains("zip"));
+        Assert.Contains(result, r => r.Extensions.Contains("docx"));
+    }
+
+    [Fact]
+    public void Spy_ZipEntryAfterLeadingDirectoryPlaceholderIsUnrecognized_FallsBackToTiedMatches()
+    {
+        // Mirrors a real docx from Word, whose actual first non-directory entry
+        // is "_rels/.rels" - not one ZipContainerSniffer recognizes - so
+        // narrowing correctly gives up rather than scanning deeper into the
+        // archive for a name it does recognize (see docs/adr/0009).
+        var bytes = BuildZipWithEntries(
+            ("_rels/", [], true),
+            ("readme.txt", "hi"u8.ToArray(), false));
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Contains(result, r => r.Extensions.Contains("zip"));
+        Assert.Contains(result, r => r.Extensions.Contains("docx"));
+        Assert.Contains(result, r => r.Extensions.Contains("jar"));
+    }
+
+    [Fact]
+    public void Spy_ZipTruncatedRightAfterLeadingDirectoryPlaceholder_FallsBackToTiedMatches()
+    {
+        // Only the directory placeholder's own local file header and name made
+        // it into the buffer; nothing at all is known about what comes next.
+        // This must fall back gracefully, not throw or guess.
+        var full = BuildZipWithEntries(
+            ("_rels/", [], true),
+            ("[Content_Types].xml", "<Types/>"u8.ToArray(), false));
+        var truncated = full[..36]; // header (30) + "_rels/".Length (6), nothing more
+
+        var result = _sut.Spy(truncated);
+
+        Assert.Contains(result, r => r.Extensions.Contains("zip"));
+        Assert.Contains(result, r => r.Extensions.Contains("docx"));
     }
 
     [Fact]
@@ -427,6 +550,39 @@ public class MimeSpyTests
         content.CopyTo(header, 30 + nameBytes.Length);
 
         return header;
+    }
+
+    private static byte[] BuildZipWithEntries(params (string Name, byte[] Content, bool Stored)[] entries)
+    {
+        using var stream = new MemoryStream();
+
+        foreach (var (name, content, stored) in entries)
+        {
+            var nameBytes = Encoding.ASCII.GetBytes(name);
+            var header = new byte[30 + nameBytes.Length + content.Length];
+
+            header[0] = 0x50;
+            header[1] = 0x4B;
+            header[2] = 0x03;
+            header[3] = 0x04;
+            // Compression method at offset 8-9: 0 = stored, 8 = deflated.
+            header[8] = (byte)(stored ? 0 : 8);
+            header[9] = 0;
+            // Compressed size at offset 18-21 and uncompressed size at 22-25
+            // (little-endian) - both equal content.Length since these entries
+            // aren't actually deflated, just copied in as-is.
+            BitConverter.GetBytes((uint)content.Length).CopyTo(header, 18);
+            BitConverter.GetBytes((uint)content.Length).CopyTo(header, 22);
+            // Filename length at offset 26-27 (little-endian); extra field length (28-29) left at 0.
+            BitConverter.GetBytes((ushort)nameBytes.Length).CopyTo(header, 26);
+
+            nameBytes.CopyTo(header, 30);
+            content.CopyTo(header, 30 + nameBytes.Length);
+
+            stream.Write(header);
+        }
+
+        return stream.ToArray();
     }
 
     private static byte[] BuildOggPage(byte[] codecIdentifier)

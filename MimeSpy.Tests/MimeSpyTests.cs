@@ -605,12 +605,78 @@ public class MimeSpyTests
         Assert.Throws<ArgumentNullException>(() => _sut.Spy((Stream)null!));
     }
 
+    [Fact]
+    public async Task SpyAsync_Stream_MatchesSameAsEquivalentBytes()
+    {
+        using var stream = new MemoryStream("%PDF-1.7 rest of file"u8.ToArray());
+
+        var result = await _sut.SpyAsync(stream, TestContext.Current.CancellationToken);
+
+        Assert.Contains(result, r => r.Extensions.Contains("pdf"));
+    }
+
+    [Fact]
+    public async Task SpyAsync_SeekableStream_RestoresOriginalPosition()
+    {
+        using var stream = new MemoryStream("%PDF-1.7 rest of file"u8.ToArray());
+        stream.Position = 3;
+
+        await _sut.SpyAsync(stream, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, stream.Position);
+    }
+
+    [Fact]
+    public async Task SpyAsync_StreamThatOnlyReadsAFewBytesAtATime_StillAssemblesFullHeader()
+    {
+        using var stream = new TrickleStream("%PDF-1.7 rest of file"u8.ToArray(), maxBytesPerRead: 2);
+
+        var result = await _sut.SpyAsync(stream, TestContext.Current.CancellationToken);
+
+        Assert.Contains(result, r => r.Extensions.Contains("pdf"));
+    }
+
+    [Fact]
+    public async Task SpyAsync_ShortStream_ReturnsMatchesUsingWhateverWasAvailable()
+    {
+        using var stream = new MemoryStream("%PDF-1.7"u8.ToArray());
+
+        var result = await _sut.SpyAsync(stream, TestContext.Current.CancellationToken);
+
+        Assert.Contains(result, r => r.Extensions.Contains("pdf"));
+    }
+
+    [Fact]
+    public void SpyAsync_NullStream_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+        {
+            _ = _sut.SpyAsync(null!, TestContext.Current.CancellationToken);
+        });
+    }
+
+    [Fact]
+    public async Task SpyAsync_CancelledToken_Throws()
+    {
+        using var stream = new MemoryStream("%PDF-1.7 rest of file"u8.ToArray());
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _sut.SpyAsync(stream, cts.Token));
+    }
+
     private sealed class TrickleStream(byte[] data, int maxBytesPerRead) : MemoryStream(data)
     {
         public override int Read(Span<byte> buffer)
         {
             var limited = buffer.Length > maxBytesPerRead ? buffer[..maxBytesPerRead] : buffer;
             return base.Read(limited);
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            var limited = Math.Min(count, maxBytesPerRead);
+            return base.ReadAsync(buffer, offset, limited, cancellationToken);
         }
     }
 

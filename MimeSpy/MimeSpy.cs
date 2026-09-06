@@ -125,6 +125,54 @@ public sealed class MimeSpy
         return totalRead;
     }
 #endif
+
+    /// <summary>
+    /// Asynchronously identifies the file format(s) matching the leading bytes of <paramref name="stream"/>.
+    /// </summary>
+    /// <param name="stream">Read the same way, and for the same reason, as <see cref="Spy(Stream)"/> - see that overload's own doc.</param>
+    /// <param name="cancellationToken">Cancels the pending read from <paramref name="stream"/>.</param>
+    public Task<IReadOnlyList<Result>> SpyAsync(Stream stream, CancellationToken cancellationToken = default)
+    {
+        if (stream is null)
+        {
+            throw new ArgumentNullException(nameof(stream));
+        }
+
+        return SpyAsyncCore(stream, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<Result>> SpyAsyncCore(Stream stream, CancellationToken cancellationToken)
+    {
+        var startPosition = stream.CanSeek ? stream.Position : -1;
+        var readSize = Math.Max(SignatureIndex.MaxHeaderReach, AsfContainerSniffer.SearchWindowSize);
+
+        var buffer = new byte[readSize];
+        var totalRead = await ReadAtLeastAsync(stream, buffer, cancellationToken).ConfigureAwait(false);
+
+        if (startPosition >= 0)
+        {
+            stream.Position = startPosition;
+        }
+
+        return Spy(buffer.AsSpan(0, totalRead));
+    }
+
+    private static async Task<int> ReadAtLeastAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
+    {
+        var totalRead = 0;
+        while (totalRead < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer, totalRead, buffer.Length - totalRead, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            totalRead += read;
+        }
+
+        return totalRead;
+    }
 }
 
 /// <summary>

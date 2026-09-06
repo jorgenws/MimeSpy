@@ -53,6 +53,8 @@ Tests use xunit v3 on the Microsoft.Testing.Platform runner; both test projects 
 
 `MimeSpy.Tests` is mostly hand-built byte arrays covering specific signature-matching and disambiguation rules. `MimeSpy.IntegrationTests` runs the same `Spy()` API against real, genuinely-encoded sample files - one per mainstream format - committed under `MimeSpy.IntegrationTests/Fixtures/`; see that project's README for where each one came from.
 
+See [docs/releasing.md](docs/releasing.md) for how to cut a new NuGet release.
+
 ## Data
 
 File headers are from https://www.garykessler.net/software/index.html#filesigs.

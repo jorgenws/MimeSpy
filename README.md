@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="mimespy.png" alt="MimeSpy" width="300">
+</p>
+
 # MimeSpy
 
 Library to detect mime type from file headers.

@@ -25,6 +25,7 @@ normalization, no diffing).
 | woff2 | Generated locally by Google's real `woff2_compress` reference tool, from the ttf above |
 | pdf, rtf, docx, xlsx, pptx, odt, ods, odp, epub, jar, zip, 7z | Real-world sample files from [Apache Tika's test-documents](https://github.com/apache/tika) (Apache License 2.0) - see below |
 | doc, xls, ppt | Generated locally by LibreOffice's real Word 97/Excel 97/PowerPoint 97 export filters, converting the Tika-sourced sample.odt/sample.ods/sample.odp above: `soffice --headless --convert-to doc:"MS Word 97" sample.odt` (same pattern for xls/ppt) |
+| heic | Real-world file of unspecified web origin (not locally generated - see below) |
 
 ### Apache Tika-sourced fixtures
 
@@ -93,10 +94,34 @@ could be:
   rather than a bounded string search - see docs/adr/0011. Each fixture now narrows to a
   single result, still tied with its own template/add-in/slideshow sibling
   (doc/dot, xls/xla, ppt/pps) since the CFB structure alone can't tell those apart.
+- `sample.heic` surfaced that `file_signatures.csv`'s only HEIC row hardcodes the `ftyp`
+  box's size field as part of the match (`00 00 00 20 66 74 79 70 68 65 69 63`, i.e.
+  exactly a 32-byte box) - real encoders vary that size with how many compatible brands
+  they list, and this file uses a 24-byte box, so the row never fired; `Spy()` fell
+  through to the generic offset-0 `ftyp` row instead and misidentified it as
+  `3gp5`/`m4v`/`mp4`. Fixed with a size-agnostic supplemental row matching just `ftyp` +
+  major brand `heic` at offset 4 (the same pattern `file_signatures.csv` already uses for
+  MP4's own brand variants, e.g. `ftyp` + `3gp5`/`isom`), so it fires regardless of box
+  size.
 
 ### Not included
 
 - **woff (v1)**: superseded by woff2, no local tool produces it, and hand-rolling the
   zlib-per-table WOFF1 layout wasn't judged worth it for a legacy format.
-- **heic, avif**: the local ImageMagick build has no HEIC/AVIF delegate compiled in.
+- **avif**: the local ImageMagick build has no AVIF delegate compiled in.
 - **apk**: not present anywhere in Apache Tika's test-documents corpus.
+- **heif**: a file downloaded under this name turned out to declare major brand `heic` -
+  byte-for-byte identical to `sample.heic` in the part that encodes format identity (both
+  `file(1)`/libmagic and Apache Tika's own brand-based mimetype rules call it
+  `image/heic` too). It was really just a second `heic` file wearing a `.heif` filename,
+  so it was dropped rather than kept as a duplicate.
+
+### Not locally generated
+
+- **heic**: `libheif`'s `heif-enc` (the real HEVC-based HEIF/AVIF encoder, installed
+  specifically to try generating this) refuses to encode below 10-bit
+  (`-b`/`--bit-depth` only accepts 9-16 on this build) and so can only ever produce a
+  `heix`-branded (10-bit "range extension" profile) file, not the plain `heic`-branded
+  files real cameras and phones actually produce almost universally. Rather than swap a
+  realistic, correctly-detected fixture for a less representative locally-generated one,
+  `sample.heic` stays a real-world file of unspecified web origin.

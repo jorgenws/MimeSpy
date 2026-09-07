@@ -21,6 +21,7 @@ public class RealSampleFileTests
         { "sample.ico", "ico" },
         { "sample.tiff", "tiff" },
         { "sample.webp", "webp" },
+        { "sample.heic", "heic" },
 
         // Audio
         { "sample.wav", "wav" },

@@ -30,6 +30,7 @@
     <EmbeddedResource Include="..\Resources\mime.types" LogicalName="mime.types" Link="Resources\mime.types" />
     <EmbeddedResource Include="..\Resources\ogg_codec_identifiers.csv" LogicalName="ogg_codec_identifiers.csv" Link="Resources\ogg_codec_identifiers.csv" />
     <EmbeddedResource Include="..\Resources\pronom-droid-signatures.xml" LogicalName="pronom-droid-signatures.xml" Link="Resources\pronom-droid-signatures.xml" />
+    <EmbeddedResource Include="..\Resources\pronom-container-signatures.xml" LogicalName="pronom-container-signatures.xml" Link="Resources\pronom-container-signatures.xml" />
     <None Include="..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

@@ -30,6 +30,13 @@ internal static class PronomSignatureMatcher
     /// </summary>
     public static IReadOnlyList<PronomFileFormat> FindMatchesFull(ReadOnlySpan<byte> bytes) => FindMatches(bytes, isCompleteFile: true);
 
+    /// <summary>
+    /// Matches a single signature against <paramref name="bytes"/> as complete
+    /// content (a container signature's extracted entry, e.g.) - used by
+    /// <see cref="PronomContainerMatcher"/> rather than the DROID table walk above.
+    /// </summary>
+    public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, isCompleteFile: true);
+
     private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> bytes, bool isCompleteFile)
     {
         List<PronomFileFormat>? matches = null;
@@ -161,13 +168,13 @@ internal static class PronomSignatureMatcher
                 break;
             }
 
-            var idx = data.Slice(pos, searchHi - pos + sub.Anchor.Length).IndexOf(sub.Anchor);
+            var idx = FindForward(sub.Anchor, data, pos, searchHi, ref budget);
             if (idx < 0)
             {
                 break;
             }
 
-            var anchorStart = pos + idx;
+            var anchorStart = idx;
             var leftOk = sub.LeftFragmentGroups.Count == 0
                 ? IsWithin(anchorStart, checkedLo, checkedHi)
                 : MatchesFragmentGroupsBackward(sub.LeftFragmentGroups, 0, data, anchorStart, ref budget, out var leftReach) && IsWithin(leftReach, checkedLo, checkedHi);
@@ -194,13 +201,13 @@ internal static class PronomSignatureMatcher
                 break;
             }
 
-            var idx = data.Slice(searchLo, pos - searchLo + sub.Anchor.Length).LastIndexOf(sub.Anchor);
+            var idx = FindBackward(sub.Anchor, data, searchLo, pos, ref budget);
             if (idx < 0)
             {
                 break;
             }
 
-            var anchorStart = searchLo + idx;
+            var anchorStart = idx;
             var anchorEnd = anchorStart + sub.Anchor.Length;
 
             var rightOk = sub.RightFragmentGroups.Count == 0
@@ -220,6 +227,59 @@ internal static class PronomSignatureMatcher
     }
 
     private static bool IsWithin(int value, int lo, int hi) => value >= lo && value <= hi;
+
+    // Leftmost occurrence of pattern with a start index in [lo, hi]. Most anchors
+    // are plain literal bytes (see PronomBytePattern.LiteralBytes), so this almost
+    // always takes ReadOnlySpan<byte>'s vectorized IndexOf; a wildcarded anchor (rare
+    // - only the container-signature file's Sequences ever have one) falls back to a
+    // manual per-position scan, budgeted the same as fragment candidates.
+    private static int FindForward(PronomBytePattern pattern, ReadOnlySpan<byte> data, int lo, int hi, ref int budget)
+    {
+        if (pattern.LiteralBytes is { } literal)
+        {
+            var idx = data.Slice(lo, hi - lo + pattern.Length).IndexOf(literal);
+            return idx < 0 ? -1 : lo + idx;
+        }
+
+        for (var i = lo; i <= hi; i++)
+        {
+            if (budget-- <= 0)
+            {
+                return -1;
+            }
+
+            if (pattern.MatchesAt(data, i))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int FindBackward(PronomBytePattern pattern, ReadOnlySpan<byte> data, int lo, int hi, ref int budget)
+    {
+        if (pattern.LiteralBytes is { } literal)
+        {
+            var idx = data.Slice(lo, hi - lo + pattern.Length).LastIndexOf(literal);
+            return idx < 0 ? -1 : lo + idx;
+        }
+
+        for (var i = hi; i >= lo; i--)
+        {
+            if (budget-- <= 0)
+            {
+                return -1;
+            }
+
+            if (pattern.MatchesAt(data, i))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
 
     // groups is ordered by Position ascending (1 = closest to the anchor, extending
     // toward the start of file). Alternatives within a group, and candidate positions

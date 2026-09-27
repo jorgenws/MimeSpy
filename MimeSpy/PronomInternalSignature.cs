@@ -64,6 +64,24 @@ internal sealed record PronomBitmaskToken(byte Mask, bool Negated) : PronomByteT
     }
 }
 
+/// <summary>(HH|HH|...) - matches any one of a short list of fixed byte values, all the same length.</summary>
+internal sealed record PronomByteSetToken(IReadOnlyList<byte[]> Alternatives) : PronomByteToken(Alternatives[0].Length)
+{
+    public override bool Matches(ReadOnlySpan<byte> data, int offset)
+    {
+        var candidate = data.Slice(offset, Length);
+        foreach (var alternative in Alternatives)
+        {
+            if (candidate.SequenceEqual(alternative))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 /// <summary>
 /// A fixed-length byte pattern - a run of <see cref="PronomByteToken"/>s, most often
 /// all <see cref="PronomLiteralToken"/> but occasionally mixing in a wildcard token.
@@ -72,11 +90,27 @@ internal sealed record PronomBytePattern(IReadOnlyList<PronomByteToken> Tokens)
 {
     public int Length { get; } = Tokens.Sum(t => t.Length);
 
+    /// <summary>
+    /// The flat literal bytes this pattern reduces to, if every token is a plain
+    /// <see cref="PronomLiteralToken"/> - lets the matcher use
+    /// <see cref="ReadOnlySpan{T}"/>'s vectorized IndexOf/LastIndexOf instead of a
+    /// manual per-position token scan, for the common case where a pattern has no
+    /// wildcards at all.
+    /// </summary>
+    public byte[]? LiteralBytes { get; } = Tokens.All(t => t is PronomLiteralToken)
+        ? [.. Tokens.Cast<PronomLiteralToken>().Select(t => t.Value)]
+        : null;
+
     public bool MatchesAt(ReadOnlySpan<byte> data, int start)
     {
         if (start < 0 || start + Length > data.Length)
         {
             return false;
+        }
+
+        if (LiteralBytes is { } literal)
+        {
+            return data.Slice(start, Length).SequenceEqual(literal);
         }
 
         var offset = start;
@@ -115,14 +149,14 @@ internal sealed record PronomFragmentGroup(int MinOffset, int MaxOffset, IReadOn
 /// <param name="Position">Matching order among this unit's <see cref="PronomByteSequence"/> siblings.</param>
 /// <param name="MinOffset">Minimum gap, in bytes, before this unit.</param>
 /// <param name="MaxOffset">Maximum gap, in bytes, before this unit. Null means the gap is unbounded.</param>
-/// <param name="Anchor">The fixed byte pattern searched for directly.</param>
+/// <param name="Anchor">The byte pattern searched for directly - usually literal, occasionally wildcarded.</param>
 /// <param name="LeftFragmentGroups">Alternative fragment chains extending backward from the anchor, nearest first.</param>
 /// <param name="RightFragmentGroups">Alternative fragment chains extending forward from the anchor, nearest first.</param>
 internal sealed record PronomSubSequence(
     int Position,
     int MinOffset,
     int? MaxOffset,
-    byte[] Anchor,
+    PronomBytePattern Anchor,
     IReadOnlyList<PronomFragmentGroup> LeftFragmentGroups,
     IReadOnlyList<PronomFragmentGroup> RightFragmentGroups);
 

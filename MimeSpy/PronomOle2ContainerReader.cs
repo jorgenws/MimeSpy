@@ -7,6 +7,8 @@ namespace MimeSpy;
 /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) reader for
 /// the container signature engine: given the complete bytes of an OLE2 file, resolves
 /// a (possibly nested, e.g. <c>"Document/Page1"</c>) stream path to its full content.
+/// Never copies the array it's given (see <see cref="TryOpen"/>'s own doc) - a large
+/// file is held once, not once per reader that opens it.
 ///
 /// Unlike <see cref="Ole2ContainerSniffer"/> - which only needs directory entry
 /// *names*, flatly, and so skips both stream content and the directory's red-black
@@ -33,6 +35,7 @@ internal sealed class PronomOle2ContainerReader
     private static readonly byte[] Signature = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 
     private readonly byte[] _bytes;
+    private readonly int _length;
     private readonly int _sectorSize;
     private readonly uint[] _difat;
     private readonly uint _firstMiniFatSector;
@@ -46,9 +49,10 @@ internal sealed class PronomOle2ContainerReader
 
     private readonly record struct DirectoryEntry(string Name, byte ObjectType, uint Left, uint Right, uint Child, uint StartSector, ulong StreamSize);
 
-    private PronomOle2ContainerReader(byte[] bytes, int sectorSize, uint[] difat, uint firstMiniFatSector, uint miniFatSectorCount, ulong miniStreamCutoff, List<DirectoryEntry> entries, int rootIndex)
+    private PronomOle2ContainerReader(byte[] bytes, int length, int sectorSize, uint[] difat, uint firstMiniFatSector, uint miniFatSectorCount, ulong miniStreamCutoff, List<DirectoryEntry> entries, int rootIndex)
     {
         _bytes = bytes;
+        _length = length;
         _sectorSize = sectorSize;
         _difat = difat;
         _firstMiniFatSector = firstMiniFatSector;
@@ -58,9 +62,16 @@ internal sealed class PronomOle2ContainerReader
         _rootIndex = rootIndex;
     }
 
-    public static PronomOle2ContainerReader? TryOpen(ReadOnlySpan<byte> bytes)
+    /// <summary>
+    /// Opens an OLE2 file's <paramref name="length"/> logical bytes, backed by
+    /// <paramref name="bytes"/> - which the reader never copies, but which may
+    /// itself be larger than <paramref name="length"/> (e.g. a growable buffer's
+    /// backing array), so every bounds check is against <paramref name="length"/>,
+    /// never <c>bytes.Length</c>.
+    /// </summary>
+    public static PronomOle2ContainerReader? TryOpen(byte[] bytes, int length)
     {
-        if (bytes.Length < HeaderSize || !bytes[..8].SequenceEqual(Signature))
+        if (length < HeaderSize || !bytes.AsSpan(0, 8).SequenceEqual(Signature))
         {
             return null;
         }
@@ -83,15 +94,14 @@ internal sealed class PronomOle2ContainerReader
             difat[i] = ReadUInt32(bytes, 76 + (i * 4));
         }
 
-        var array = bytes.ToArray();
-        var entries = ReadDirectoryEntries(array, sectorSize, difat, firstDirectorySector);
+        var entries = ReadDirectoryEntries(bytes, length, sectorSize, difat, firstDirectorySector);
         var rootIndex = entries.FindIndex(e => e.ObjectType == 5);
         if (rootIndex < 0)
         {
             return null;
         }
 
-        return new PronomOle2ContainerReader(array, sectorSize, difat, firstMiniFatSector, miniFatSectorCount, miniStreamCutoff, entries, rootIndex);
+        return new PronomOle2ContainerReader(bytes, length, sectorSize, difat, firstMiniFatSector, miniFatSectorCount, miniStreamCutoff, entries, rootIndex);
     }
 
     /// <summary>
@@ -156,7 +166,7 @@ internal sealed class PronomOle2ContainerReader
         return FindChild(entry.Left, name) ?? FindChild(entry.Right, name);
     }
 
-    private static List<DirectoryEntry> ReadDirectoryEntries(byte[] bytes, int sectorSize, uint[] difat, uint firstDirectorySector)
+    private static List<DirectoryEntry> ReadDirectoryEntries(byte[] bytes, int length, int sectorSize, uint[] difat, uint firstDirectorySector)
     {
         var entries = new List<DirectoryEntry>();
         var visited = new HashSet<uint>();
@@ -165,7 +175,7 @@ internal sealed class PronomOle2ContainerReader
         while (sector < MinReservedSector && visited.Add(sector))
         {
             var offset = SectorByteOffset(sector, sectorSize);
-            if (offset < 0 || offset + sectorSize > bytes.Length)
+            if (offset < 0 || offset + sectorSize > length)
             {
                 break;
             }
@@ -176,7 +186,7 @@ internal sealed class PronomOle2ContainerReader
                 entries.Add(ParseDirectoryEntry(bytes, (int)offset + (i * DirectoryEntrySize)));
             }
 
-            if (!TryGetNextSector(bytes, sectorSize, difat, sector, out sector))
+            if (!TryGetNextSector(bytes, length, sectorSize, difat, sector, out sector))
             {
                 break;
             }
@@ -224,7 +234,7 @@ internal sealed class PronomOle2ContainerReader
             }
 
             var offset = SectorByteOffset(sector, _sectorSize);
-            if (offset < 0 || offset + _sectorSize > _bytes.Length)
+            if (offset < 0 || offset + _sectorSize > _length)
             {
                 return null;
             }
@@ -233,7 +243,7 @@ internal sealed class PronomOle2ContainerReader
             Array.Copy(_bytes, offset, result, written, toCopy);
             written += toCopy;
 
-            if (written >= length || !TryGetNextSector(_bytes, _sectorSize, _difat, sector, out sector))
+            if (written >= length || !TryGetNextSector(_bytes, _length, _sectorSize, _difat, sector, out sector))
             {
                 break;
             }
@@ -307,7 +317,7 @@ internal sealed class PronomOle2ContainerReader
         return fat is null || offset < 0 || offset + 4 > fat.Length ? MinReservedSector : ReadUInt32(fat, (int)offset);
     }
 
-    private static bool TryGetNextSector(byte[] bytes, int sectorSize, uint[] difat, uint sector, out uint next)
+    private static bool TryGetNextSector(byte[] bytes, int length, int sectorSize, uint[] difat, uint sector, out uint next)
     {
         next = 0;
 
@@ -326,7 +336,7 @@ internal sealed class PronomOle2ContainerReader
 
         var fatSectorOffset = SectorByteOffset(fatSector, sectorSize);
         var entryOffset = fatSectorOffset + ((sector % entriesPerFatSector) * 4);
-        if (entryOffset < 0 || entryOffset + 4 > bytes.Length)
+        if (entryOffset < 0 || entryOffset + 4 > length)
         {
             return false;
         }

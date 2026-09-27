@@ -15,29 +15,59 @@ namespace MimeSpy;
 /// </summary>
 internal static class PronomSignatureMatcher
 {
+    // How a signature's end-of-file-anchored ByteSequences are treated when
+    // bytes might only be a leading prefix of the real file:
+    //   RejectIfPresent (Sniff) - merely *having* an EOF sequence disqualifies the
+    //     whole signature, since it can never be verified this way; guarantees every
+    //     match here would also be reported by Analyze.
+    //   Ignore (Guess) - EOF sequences are skipped rather than rejected, so a
+    //     signature matches on its BOF portion alone. For a format whose BOF happens
+    //     to be shared with another cataloged format (e.g. TIFF/DNG, GIF/Persuasion
+    //     Player - see docs/adr/0017), skipping EOF for both sides means both match,
+    //     surfacing the real ambiguity as a tie instead of silently guessing one.
+    //   Require (Analyze) - EOF sequences are evaluated against bytes' true end, so
+    //     bytes must be the complete file.
+    private enum EofPolicy
+    {
+        RejectIfPresent,
+        Ignore,
+        Require,
+    }
+
     /// <summary>
     /// Matches signatures whose byte sequences are all anchored to the start of the
     /// file, against a buffer that may only be a leading prefix of the real file.
     /// Signatures with an end-of-file-anchored sequence can never be evaluated safely
     /// this way - <paramref name="bytes"/> might not reach the real end of file - so
-    /// they're skipped rather than matched against a false EOF.
+    /// they're skipped rather than matched against a false EOF. See
+    /// <see cref="FindMatchesGuess"/> for a more permissive alternative.
     /// </summary>
-    public static IReadOnlyList<PronomFileFormat> FindMatchesForward(ReadOnlySpan<byte> bytes) => FindMatches(bytes, isCompleteFile: false);
+    public static IReadOnlyList<PronomFileFormat> FindMatchesForward(ReadOnlySpan<byte> bytes) => FindMatches(bytes, EofPolicy.RejectIfPresent);
+
+    /// <summary>
+    /// Matches signatures the same way as <see cref="FindMatchesForward"/>, except a
+    /// signature's end-of-file-anchored sequences are skipped rather than
+    /// disqualifying it - so this can report a format PRONOM itself only considers
+    /// confirmed once its trailer is checked (docs/adr/0017). Unlike
+    /// <see cref="FindMatchesForward"/>, a match here is not guaranteed to also be
+    /// reported by <see cref="FindMatchesFull"/> against the same file's complete bytes.
+    /// </summary>
+    public static IReadOnlyList<PronomFileFormat> FindMatchesGuess(ReadOnlySpan<byte> bytes) => FindMatches(bytes, EofPolicy.Ignore);
 
     /// <summary>
     /// Matches signatures against <paramref name="bytes"/> as the complete file
     /// content, so end-of-file-anchored sequences can be evaluated against its true end.
     /// </summary>
-    public static IReadOnlyList<PronomFileFormat> FindMatchesFull(ReadOnlySpan<byte> bytes) => FindMatches(bytes, isCompleteFile: true);
+    public static IReadOnlyList<PronomFileFormat> FindMatchesFull(ReadOnlySpan<byte> bytes) => FindMatches(bytes, EofPolicy.Require);
 
     /// <summary>
     /// Matches a single signature against <paramref name="bytes"/> as complete
     /// content (a container signature's extracted entry, e.g.) - used by
     /// <see cref="PronomContainerMatcher"/> rather than the DROID table walk above.
     /// </summary>
-    public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, isCompleteFile: true);
+    public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, EofPolicy.Require);
 
-    private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> bytes, bool isCompleteFile)
+    private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> bytes, EofPolicy eofPolicy)
     {
         List<PronomFileFormat>? matches = null;
 
@@ -45,7 +75,7 @@ internal static class PronomSignatureMatcher
         {
             foreach (var signatureId in format.InternalSignatureIds)
             {
-                if (!Matches(PronomSignatureIndex.GetSignature(signatureId), bytes, isCompleteFile))
+                if (!Matches(PronomSignatureIndex.GetSignature(signatureId), bytes, eofPolicy))
                 {
                     continue;
                 }
@@ -70,17 +100,37 @@ internal static class PronomSignatureMatcher
     private const int InitialProbeBudget = 50_000;
 
     // A signature's byte sequences are an AND: every one of them - BOF and EOF alike -
-    // has to match for the signature as a whole to match.
-    private static bool Matches(PronomInternalSignature signature, ReadOnlySpan<byte> bytes, bool isCompleteFile)
+    // has to match for the signature as a whole to match (subject to eofPolicy).
+    private static bool Matches(PronomInternalSignature signature, ReadOnlySpan<byte> bytes, EofPolicy eofPolicy)
     {
+        // Under Ignore, a signature made up entirely of EOF-anchored sequences (a
+        // few formats - e.g. TGA Bitmap, Apple Disk Image - are identified only by
+        // their trailer, no BOF at all) would otherwise have nothing left to check
+        // once every one of them is skipped, and match vacuously. There has to be at
+        // least one BOF sequence actually evaluated for a "guess" to mean anything.
+        if (eofPolicy == EofPolicy.Ignore && !signature.ByteSequences.Any(bs => bs.Anchor == PronomAnchor.BeginningOfFile))
+        {
+            return false;
+        }
+
         var budget = InitialProbeBudget;
         foreach (var byteSequence in signature.ByteSequences)
         {
             if (byteSequence.Anchor == PronomAnchor.EndOfFile)
             {
-                if (!isCompleteFile || !MatchesBackward(byteSequence.SubSequences, bytes, ref budget))
+                switch (eofPolicy)
                 {
-                    return false;
+                    case EofPolicy.RejectIfPresent:
+                        return false;
+                    case EofPolicy.Ignore:
+                        continue;
+                    case EofPolicy.Require:
+                        if (!MatchesBackward(byteSequence.SubSequences, bytes, ref budget))
+                        {
+                            return false;
+                        }
+
+                        break;
                 }
             }
             else if (!MatchesForward(byteSequence.SubSequences, bytes, ref budget))

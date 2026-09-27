@@ -1,7 +1,7 @@
 namespace MimeSpy;
 
 /// <inheritdoc/>
-public sealed class MimeSpy : IMimeSpy
+public sealed partial class MimeSpy : IMimeSpy
 {
     // Order matters where two sniffers could both apply to the same tied results
     // (e.g. Zip vs Ole2): whichever runs first and narrows leaves the rest a no-op,

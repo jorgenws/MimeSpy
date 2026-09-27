@@ -68,6 +68,13 @@ public sealed partial class MimeSpy
         return Sniff(buffer.AsSpan(0, totalRead));
     }
 
+    // How much a Stream is worth fully buffering under Guess before falling back to
+    // a bounded peek - see docs/adr/0019. Chosen, like SniffReadSize, rather than
+    // derived: comfortably past everyday documents/images/audio, well short of
+    // "unboundedly large" so a caller who wanted a cheap peek never gets surprised
+    // by Guess quietly reading gigabytes.
+    private const long GuessFullReadThreshold = 8 * 1024 * 1024;
+
     /// <inheritdoc/>
     public IReadOnlyList<PronomFormat> Guess(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes));
 
@@ -77,6 +84,16 @@ public sealed partial class MimeSpy
         if (stream is null)
         {
             throw new ArgumentNullException(nameof(stream));
+        }
+
+        // If the stream can tell us up front that it's small, read it all and get
+        // Analyze's fully-confirmed answer (real EOF check, container engine)
+        // instead of the peek-and-skip-EOF fallback below - see docs/adr/0019 for
+        // why this is gated on a fact we already have (the stream's own reported
+        // length), not on trying Analyze and detecting whether it "worked".
+        if (TryGetRemainingLength(stream, out var remaining) && remaining <= GuessFullReadThreshold)
+        {
+            return Analyze(stream);
         }
 
         var startPosition = stream.CanSeek ? stream.Position : -1;
@@ -106,7 +123,14 @@ public sealed partial class MimeSpy
         return GuessAsyncCore(stream, cancellationToken);
     }
 
-    private async Task<IReadOnlyList<PronomFormat>> GuessAsyncCore(Stream stream, CancellationToken cancellationToken)
+    private Task<IReadOnlyList<PronomFormat>> GuessAsyncCore(Stream stream, CancellationToken cancellationToken)
+    {
+        return TryGetRemainingLength(stream, out var remaining) && remaining <= GuessFullReadThreshold
+            ? AnalyzeAsyncCore(stream, cancellationToken)
+            : GuessBoundedPeekAsync(stream, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<PronomFormat>> GuessBoundedPeekAsync(Stream stream, CancellationToken cancellationToken)
     {
         var startPosition = stream.CanSeek ? stream.Position : -1;
         var buffer = new byte[SniffReadSize];
@@ -118,6 +142,18 @@ public sealed partial class MimeSpy
         }
 
         return Guess(buffer.AsSpan(0, totalRead));
+    }
+
+    private static bool TryGetRemainingLength(Stream stream, out long remaining)
+    {
+        if (stream.CanSeek)
+        {
+            remaining = stream.Length - stream.Position;
+            return true;
+        }
+
+        remaining = 0;
+        return false;
     }
 
     /// <inheritdoc/>

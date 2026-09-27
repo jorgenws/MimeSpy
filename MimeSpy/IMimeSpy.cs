@@ -103,17 +103,33 @@ public interface IMimeSpy
     /// bytes, ...), both are reported as a tie here rather than one being silently
     /// preferred - see docs/adr/0001 for why ties are returned rather than resolved.
     /// </summary>
-    /// <param name="bytes">The start of the file - see <see cref="Sniff(ReadOnlySpan{byte})"/> for how much reaches how much.</param>
+    /// <param name="bytes">
+    /// The start of the file - see <see cref="Sniff(ReadOnlySpan{byte})"/> for how
+    /// much reaches how much. Unlike <see cref="Guess(Stream)"/>, this overload
+    /// always treats <paramref name="bytes"/> as a possibly-partial buffer (skipping
+    /// EOF/container confirmation) - a caller who knows they hold the complete file
+    /// already knows that, and should call <see cref="Analyze(ReadOnlySpan{byte})"/>
+    /// directly rather than have this method try to infer it.
+    /// </param>
     IReadOnlyList<PronomFormat> Guess(ReadOnlySpan<byte> bytes);
 
     /// <summary>
-    /// Identifies the PRONOM format(s) whose header matches the leading bytes of <paramref name="stream"/>.
+    /// Identifies the PRONOM format(s) whose header matches the leading bytes of
+    /// <paramref name="stream"/> - or, when <paramref name="stream"/> reports (via
+    /// <see cref="Stream.Length"/>) that it's small enough to be cheap to read in
+    /// full, this reads the whole thing and returns <see cref="Analyze(Stream)"/>'s
+    /// fully-confirmed answer instead. That's gated on the stream's own reported
+    /// length - a fact known before reading a single byte - rather than trying
+    /// <see cref="Analyze(Stream)"/> and detecting whether it "worked": a truncated
+    /// file doesn't reliably fail in a way that's safe to detect after the fact (see
+    /// docs/adr/0019). A non-seekable stream, or one larger than that threshold,
+    /// falls back to a bounded peek exactly like <see cref="Guess(ReadOnlySpan{byte})"/>.
     /// </summary>
     /// <param name="stream">
-    /// The stream to read from - only a bounded prefix, per <see cref="Guess(ReadOnlySpan{byte})"/>.
-    /// If the stream is seekable, its position is restored afterwards, so this is a
-    /// peek rather than a consume; on a non-seekable stream the read bytes are gone
-    /// from it.
+    /// The stream to read from - the whole thing if cheap to, otherwise only a
+    /// bounded prefix (see this method's own summary). If the stream is seekable,
+    /// its position is restored afterwards, so this is a peek rather than a
+    /// consume; on a non-seekable stream the read bytes are gone from it.
     /// </param>
     IReadOnlyList<PronomFormat> Guess(Stream stream);
 
@@ -129,7 +145,13 @@ public interface IMimeSpy
     /// <see cref="Sniff(ReadOnlySpan{byte})"/> - signatures anchored to the end of
     /// the file and PRONOM's container-signature disambiguation of ZIP/OLE2
     /// sub-formats (docx/xlsx/doc/xls/jar/odt and the like resolve to their specific
-    /// PUID here, not just the generic ZIP/OLE2 one).
+    /// PUID here, not just the generic ZIP/OLE2 one). This trusts that
+    /// <paramref name="bytes"/> is genuinely the complete file - it does not, and
+    /// cannot, verify that. A truncated buffer is treated as if its end were the
+    /// file's real end: an EOF-anchored signature check against it usually just
+    /// fails to find what it's looking for (a safe, if less specific, answer), but
+    /// isn't guaranteed to - see docs/adr/0019. Pass a merely-partial buffer to
+    /// <see cref="Sniff(ReadOnlySpan{byte})"/> or <see cref="Guess(ReadOnlySpan{byte})"/> instead.
     /// </summary>
     /// <param name="bytes">
     /// The complete file content, not just its leading bytes. This method needs no

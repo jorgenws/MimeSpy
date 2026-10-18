@@ -1,11 +1,16 @@
 namespace MimeSpy.IntegrationTests;
 
 /// <summary>
-/// Runs <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/> against real files - not bytes
-/// hand-built to match the signature table - across as many mainstream formats as this
-/// repo can reasonably produce or source: either genuine encoder/tool output (ffmpeg,
-/// ImageMagick, gzip/bzip2/xz/tar) or real-world files pulled from Apache Tika's test
-/// suite. See README.md for exactly where each one came from and how to regenerate it.
+/// Runs <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/> - the full-file,
+/// container-aware tier, the direct analogue of what a complete real file needs -
+/// against real files, not bytes hand-built to match a signature table, across as
+/// many mainstream formats as this repo can reasonably produce or source: either
+/// genuine encoder/tool output (ffmpeg, ImageMagick, gzip/bzip2/xz/tar) or real-world
+/// files pulled from Apache Tika's test suite. See README.md for exactly where each
+/// one came from and how to regenerate it. Expected results below were captured by
+/// running the real PRONOM engine against each fixture, not assumed from the old
+/// Gary-Kessler-table engine's behavior - the two don't always agree (see the
+/// Investigate_RealEpubFile tests below for a case where the new engine does better).
 /// </summary>
 public class RealSampleFileTests
 {
@@ -38,9 +43,9 @@ public class RealSampleFileTests
         { "sample.mov", "mov" },
         { "sample.ogv", "ogv" },
 
-        // Fonts
+        // Fonts - sample.otf is deliberately not here, see
+        // Investigate_RealOtfFile_IsNotIdentified_KnownGap below.
         { "sample.ttf", "ttf" },
-        { "sample.otf", "otf" },
         { "sample.woff2", "woff2" },
 
         // Archives
@@ -51,7 +56,7 @@ public class RealSampleFileTests
         { "sample.tar", "tar" },
         { "sample.7z", "7z" },
 
-        // Documents and zip-based containers
+        // Documents and zip/OLE2-based containers
         { "sample.pdf", "pdf" },
         { "sample.rtf", "rtf" },
         { "sample.docx", "docx" },
@@ -64,155 +69,183 @@ public class RealSampleFileTests
         { "sample.doc", "doc" },
         { "sample.xls", "xls" },
         { "sample.ppt", "ppt" },
-
-        // sample.epub is deliberately not here - see
-        // Spy_RealEpubFile_IsNotIdentifiedAsEpub_KnownGap below.
+        { "sample.epub", "epub" },
     };
 
     [Theory]
     [MemberData(nameof(Fixtures))]
-    public void Spy_RealSampleFile_MatchesExpectedExtension(string fileName, string expectedExtension)
+    public void Investigate_RealSampleFile_MatchesExpectedExtension(string fileName, string expectedExtension)
     {
-        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
+        var bytes = ReadFixture(fileName);
 
-        var result = _sut.Spy(bytes);
+        var result = _sut.Investigate(bytes);
 
-        Assert.Contains(result, r => r.Extensions.Contains(expectedExtension));
+        Assert.Contains(result, f => f.Extensions.Contains(expectedExtension));
     }
 
     [Fact]
-    public void Spy_RealPptxFile_NarrowsToOfficeOpenXmlTiedWithDocxAndXlsx()
+    public void Investigate_RealOtfFile_IsNotIdentified_KnownGap()
     {
-        // sample.pptx really does have "[Content_Types].xml" as its first zip
-        // entry (verified when the fixture was sourced), so ZipContainerSniffer
-        // narrows it down to the single "MS Office Open XML Format Document" row
-        // - which, from the first entry name alone, can't be told apart from an
-        // actual .docx or .xlsx (see docs/adr/0002). One result, three tied
-        // extensions is the documented, correct outcome here, not a gap.
-        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.pptx"));
+        // A known gap, not an oversight: PRONOM's current DROID table (version
+        // 125) has no signature that matches this real CFF-flavored ("OTTO")
+        // OpenType font's actual bytes, even though "otf" is a cataloged
+        // PRONOM extension in principle. Documented as current behavior.
+        var bytes = ReadFixture("sample.otf");
+
+        var result = _sut.Investigate(bytes);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void Investigate_RealJpegFile_TiesBetweenJfifAndRawJpegStream()
+    {
+        // A real JPEG matches both PRONOM's JFIF-specific PUID and its generic
+        // "Raw JPEG Stream" PUID - both resolve to the same extensions/mime
+        // type, so this is a real, documented tie, not a bug.
+        var bytes = ReadFixture("sample.jpg");
+
+        var result = _sut.Investigate(bytes);
+
+        Assert.Equal(2, result.Count);
+        Assert.All(result, f => Assert.Contains("jpg", f.Extensions));
+    }
+
+    [Fact]
+    public void Spy_RealTiffFile_ReturnsWideAmbiguousTieIncludingDigitalNegativeVariants()
+    {
+        // The scenario docs/adr/0017 describes by name: TIFF and its Digital
+        // Negative (DNG) variant share the same BOF bytes, and Spy skips the
+        // EOF/structure check that would tell them apart - so a real TIFF
+        // file matches every DNG/TIFF-family PUID that shares its header, not
+        // just the one it actually is.
+        var bytes = ReadFixture("sample.tiff");
+
+        var result = _sut.Spy(bytes);
+
+        Assert.True(result.Count > 1, "expected the wide TIFF/DNG-family tie");
+        Assert.Contains(result, f => f.Name.Contains("Digital Negative", StringComparison.Ordinal));
+        Assert.Contains(result, f => f.Extensions.Contains("tiff"));
+    }
+
+    [Fact]
+    public void Investigate_RealTiffFile_NarrowsToPlainTiffAlone()
+    {
+        // Unlike Spy above, Investigate runs the real structure check and
+        // correctly narrows this file down to plain TIFF, dropping every DNG
+        // alternative Spy couldn't rule out from the header alone.
+        var bytes = ReadFixture("sample.tiff");
+
+        var result = _sut.Investigate(bytes);
+
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/353", single.Puid);
+    }
+
+    [Fact]
+    public void Spy_RealDocxFile_OnlyMatchesGenericZip_ContainerEngineNeedsInvestigate()
+    {
+        // Spy never runs PRONOM's container-signature engine (docs/adr/0016) -
+        // that needs the complete file - so a real docx only ever matches the
+        // generic ZIP PUID under Spy, not its own docx-specific one.
+        var bytes = ReadFixture("sample.docx");
 
         var result = _sut.Spy(bytes);
 
         var single = Assert.Single(result);
+        Assert.Equal("application/zip", single.MimeType);
+    }
+
+    [Fact]
+    public void Investigate_RealDocxFile_NarrowsToWordSpecificPuid()
+    {
+        var bytes = ReadFixture("sample.docx");
+
+        var result = _sut.Investigate(bytes);
+
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/412", single.Puid);
         Assert.Contains("docx", single.Extensions);
-        Assert.Contains("xlsx", single.Extensions);
-        Assert.Contains("pptx", single.Extensions);
     }
 
     [Theory]
-    [InlineData("sample.odt", "odt")]
-    [InlineData("sample.ods", "ods")]
-    [InlineData("sample.odp", "odp")]
-    public void Spy_RealOdfFile_NarrowsToExactlyItsOwnExtension(string fileName, string expectedExtension)
+    [InlineData("sample.odt", "odt", "ott")]
+    [InlineData("sample.ods", "ods", "ots")]
+    [InlineData("sample.odp", "odp", "otp")]
+    public void Investigate_RealOdfFile_TiesWithItsOwnTemplateSibling(string fileName, string expectedExtension, string templateExtension)
     {
-        // Before docs/adr/0010, odt/odp were tied together in one upstream row
-        // and ods had no row at all - a real .ods or .odp file's stored
-        // mimetype entry would have narrowed wrong or not at all. Now each of
-        // these three real, independently-produced ODF files narrows to a
-        // single result containing only its own extension.
-        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
+        // PRONOM's container engine can tell ODF's family (odt/ods/odp) apart
+        // from one another, but - like the old engine - still can't tell a
+        // document from its own template variant (odt vs ott, etc.), since
+        // that distinction isn't encoded in the archive's structure. It also
+        // catalogs two spec-version PUIDs (1.1 and 1.2) for this exact family,
+        // each independently carrying both extensions, so a real file ties
+        // between them too.
+        var bytes = ReadFixture(fileName);
 
-        var result = _sut.Spy(bytes);
+        var result = _sut.Investigate(bytes);
+
+        Assert.Equal(2, result.Count);
+        Assert.All(result, f => Assert.Equal([expectedExtension, templateExtension], f.Extensions));
+    }
+
+    [Fact]
+    public void Investigate_RealJarFile_NarrowsToJarAlone()
+    {
+        var bytes = ReadFixture("sample.jar");
+
+        var result = _sut.Investigate(bytes);
 
         var single = Assert.Single(result);
-        Assert.Equal([expectedExtension], single.Extensions);
+        Assert.Equal("x-fmt/412", single.Puid);
     }
 
     [Fact]
-    public void Spy_RealJarFileWhoseFirstEntryIsAMetaInfDirectory_StillNarrowsToJar()
+    public void Investigate_RealLegacyWordFile_TiesBetweenSpecificAndGenericWordPuids()
     {
-        // This real jar's actual first zip entry is the "META-INF/" directory
-        // itself (a very common thing for a real jar tool to write before the
-        // manifest file it contains), not "META-INF/MANIFEST.MF" - but it's a
-        // zero-length directory placeholder, so ZipContainerSniffer skips past
-        // it and narrows on the entry right after (see docs/adr/0009). A
-        // hand-built fixture with the manifest as the literal first entry would
-        // never have exercised that skip.
-        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.jar"));
+        // sample.doc (real LibreOffice Word 97 export, OLE2/CFBF) narrows via
+        // the container engine to two Word-specific PUIDs tied together - a
+        // specific one and PRONOM's generic "Microsoft Word (Generic)" - both
+        // sharing the "doc" extension. Unlike the old engine, this never ties
+        // with "dot" - PRONOM's own data doesn't link them for this file.
+        var bytes = ReadFixture("sample.doc");
 
-        var result = _sut.Spy(bytes);
+        var result = _sut.Investigate(bytes);
 
-        var single = Assert.Single(result);
-        Assert.Contains("jar", single.Extensions);
-    }
-
-    [Fact]
-    public void Spy_RealDocxFileWithMultipleEntriesBeforeContentTypesXml_FallsBackToFullZipFamilyTie()
-    {
-        // Unlike sample.jar above, skipping this real .docx's one leading
-        // "_rels/" directory placeholder isn't enough: the entry right after it
-        // is "_rels/.rels" - a real file, not a directory, and not
-        // "[Content_Types].xml" either (that entry exists in this archive, just
-        // further in, produced by an older Word build - see its own metadata).
-        // ZipContainerSniffer (docs/adr/0009) only walks past *leading*
-        // directory placeholders, it doesn't scan the whole archive looking for
-        // a name it recognizes, so it stops at "_rels/.rels" and Spy() falls
-        // back to the full tied set of every "just a zip" format, which still
-        // contains "docx" - just alongside many others, unnarrowed. A
-        // hand-built fixture that always puts [Content_Types].xml right after
-        // any leading directory entry would never have surfaced this case.
-        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.docx"));
-
-        var result = _sut.Spy(bytes);
-
-        Assert.True(result.Count > 1, "expected the full, unnarrowed zip-family tie");
-        Assert.Contains(result, r => r.Extensions.Contains("docx"));
-    }
-
-    [Fact]
-    public void Spy_RealEpubFile_IsNotIdentifiedAsEpub_KnownGap()
-    {
-        // A known gap, not an oversight: this real epub misses both of the
-        // paths that could identify it as "epub". Its own header bytes are
-        // "50 4B 03 04 0A 00 00 00" - general-purpose flag 0x0000, not the
-        // 0x0002 the EPUB-specific 8-byte signature requires - so it doesn't
-        // win outright the way docs/adr/0002 describes. And its first
-        // non-directory zip entry (after skipping the leading "META-INF/"
-        // placeholder, see docs/adr/0009) is "META-INF/container.xml", not
-        // "mimetype", so the ODF-style content-sniffing narrowing (which does
-        // work for a real epub whose first real entry actually is "mimetype")
-        // never gets a chance to run either. Extending ZipContainerSniffer to
-        // also skip past "META-INF/container.xml" looking for "mimetype"
-        // would fix this specific file, but that starts hardcoding knowledge
-        // of one format's internal layout into what's meant to stay a check
-        // of only the first entry - not done here, see AGENTS.md's "one layer,
-        // don't make it complicated". Documented as current behavior instead.
-        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.epub"));
-
-        var result = _sut.Spy(bytes);
-
-        Assert.DoesNotContain(result, r => r.Extensions.Contains("epub"));
-        Assert.Contains(result, r => r.Extensions.Contains("zip"));
+        Assert.Equal(2, result.Count);
+        Assert.All(result, f => Assert.Equal("application/msword", f.MimeType));
+        Assert.All(result, f => Assert.Contains("doc", f.Extensions));
     }
 
     [Theory]
-    [InlineData("sample.doc", "doc", "dot")]
-    [InlineData("sample.xls", "xls", "xla")]
-    [InlineData("sample.ppt", "ppt", "pps")]
-    public void Spy_RealLegacyOfficeFile_NarrowsToItsOwnWordExcelOrPowerPointFamily(string fileName, string primaryExtension, string templateExtension)
+    [InlineData("sample.xls", "fmt/61", "xls")]
+    [InlineData("sample.ppt", "fmt/126", "ppt")]
+    public void Investigate_RealLegacyOfficeFile_NarrowsToASinglePuid(string fileName, string expectedPuid, string expectedExtension)
     {
-        // doc/xls/ppt (LibreOffice's real Word 97/Excel 97/PowerPoint 97 export
-        // filters) all share the exact same 8-byte OLE2/CFBF header
-        // (D0 CF 11 E0 A1 B1 1A E1) as dozens of unrelated formats in
-        // file_signatures.csv (Access, Visio, MSI, Publisher, ...).
-        // Ole2ContainerSniffer resolves this the way Tika/POI do - not from any
-        // fixed-offset byte pattern (the table's offset-512 "subheader" rows
-        // don't match what LibreOffice's writer actually produces here), but by
-        // parsing the CFB directory sector and matching its distinctive stream
-        // name ("WordDocument"/"Workbook"/"PowerPoint Document") - see
-        // docs/adr/0011. That narrows all 17 originally-tied results down to a
-        // single one - still tied with its own template/add-in/slideshow
-        // sibling (dot/xla/pps), since that pair is structurally identical
-        // from the CFB side alone, the same way docx/pptx/xlsx stay tied to
-        // each other above.
-        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
+        var bytes = ReadFixture(fileName);
 
-        var result = _sut.Spy(bytes);
+        var result = _sut.Investigate(bytes);
 
         var single = Assert.Single(result);
-        Assert.Equal(2, single.Extensions.Count);
-        Assert.Contains(primaryExtension, single.Extensions);
-        Assert.Contains(templateExtension, single.Extensions);
-        Assert.Equal(primaryExtension, single.PrimaryExtension);
+        Assert.Equal(expectedPuid, single.Puid);
+        Assert.Contains(expectedExtension, single.Extensions);
     }
+
+    [Fact]
+    public void Investigate_RealEpubFile_NarrowsToEpub()
+    {
+        // Unlike the old Gary-Kessler-table engine (which had a documented
+        // known gap here - see git history), PRONOM's container engine
+        // correctly resolves this real epub to its own PUID.
+        var bytes = ReadFixture("sample.epub");
+
+        var result = _sut.Investigate(bytes);
+
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/483", single.Puid);
+        Assert.Contains("epub", single.Extensions);
+    }
+
+    private static byte[] ReadFixture(string fileName) =>
+        File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
 }

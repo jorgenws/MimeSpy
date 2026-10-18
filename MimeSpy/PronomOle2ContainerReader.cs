@@ -10,12 +10,11 @@ namespace MimeSpy;
 /// Never copies the array it's given (see <see cref="TryOpen"/>'s own doc) - a large
 /// file is held once, not once per reader that opens it.
 ///
-/// Unlike <see cref="Ole2ContainerSniffer"/> - which only needs directory entry
-/// *names*, flatly, and so skips both stream content and the directory's red-black
-/// tree structure entirely - this needs real content (via the regular FAT chain for
-/// large streams, or the MiniFAT/mini-stream for small ones) and real path
-/// resolution (via that tree), so it's a separate, more complete reader rather than
-/// an extension of that one. Like it, this only follows FAT sectors reachable
+/// Unlike a flat directory-entry-name lookup - which only needs the *names*,
+/// and so skips both stream content and the directory's red-black tree structure
+/// entirely - this needs real content (via the regular FAT chain for large streams,
+/// or the MiniFAT/mini-stream for small ones) and real path resolution (via that
+/// tree), so it's a complete reader rather than a name-only one. This only follows FAT sectors reachable
 /// through the header's own embedded DIFAT array (up to 109 entries - good for
 /// roughly the first 7MB of a 512-byte-sector file), never the additional-DIFAT-
 /// sector chain beyond that.

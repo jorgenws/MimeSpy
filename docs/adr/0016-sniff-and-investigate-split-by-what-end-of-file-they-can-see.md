@@ -1,4 +1,4 @@
-# Sniff and Analyze are split by whether they can see the end of the file
+# Sniff and Investigate are split by whether they can see the end of the file
 
 PRONOM signatures aren't uniformly BOF-anchored the way the old CSV table's
 were: a `ByteSequence` can be anchored to either end of the file, and PRONOM's
@@ -19,27 +19,27 @@ that line:
   container-disambiguation-dependent alternatives just don't match. Safe
   against a truncated or streamed-in-pieces buffer, at the cost of a less
   specific (or absent) answer for some formats.
-- `Analyze` requires the complete file and evaluates everything: EOF-anchored
+- `Investigate` requires the complete file and evaluates everything: EOF-anchored
   signatures, and, for ZIP/OLE2-triggering matches, the container signatures
   that resolve docx/xlsx/pptx/doc/xls/jar/odt-and-siblings to their specific
   PUID instead of the generic container one.
 
-Unlike `Spy`'s docs/adr/0002-style guarantee (532 bytes reaches every
-signature in the old table, because every one of those was BOF-anchored at a
-small fixed offset), there's no such number for `Sniff`: PRONOM's own data
-means a real, non-empty ZIP or OLE2 file's specific format - and a
-surprising number of everyday formats besides, including PNG, JPEG, GIF, PDF,
-and even generic ZIP itself - has no BOF-only signature at all in this
-version of the DROID table; every alternative PRONOM defines for them also
-requires the EOF check. `Sniff` correctly reports no match for these rather
-than guessing, which is a real capability gap against the old `Spy` (which
-had a plain "PK\x03\x04" BOF rule for ZIP, and equivalent BOF-only rules for
-PNG/JPEG/GIF, since that table never modeled EOF anchoring at all) - callers
-who need those specifically should prefer `Analyze` and accept needing the
-whole file.
+Unlike the old Gary-Kessler-table engine's docs/adr/0002-style guarantee (532
+bytes reaches every signature in that table, because every one of those was
+BOF-anchored at a small fixed offset), there's no such number for `Sniff`:
+PRONOM's own data means a real, non-empty ZIP or OLE2 file's specific format -
+and a surprising number of everyday formats besides, including PNG, JPEG,
+GIF, PDF, and even generic ZIP itself - has no BOF-only signature at all in
+this version of the DROID table; every alternative PRONOM defines for them
+also requires the EOF check. `Sniff` correctly reports no match for these
+rather than guessing, which is a real capability gap against that old engine
+(which had a plain "PK\x03\x04" BOF rule for ZIP, and equivalent BOF-only
+rules for PNG/JPEG/GIF, since that table never modeled EOF anchoring at all) -
+callers who need those specifically should prefer `Investigate` and accept
+needing the whole file.
 
 Where a format's *specific* sub-type needs the container engine but its
 *generic* family has its own independent BOF-only signature (Microsoft Office
 Open XML, PUID `fmt/189`, covers this for pptx/xlsx but not docx in the
 current data), `Sniff` still reports that generic PUID - it just can't narrow
-further the way `Analyze` can.
+further the way `Investigate` can.

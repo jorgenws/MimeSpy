@@ -19,13 +19,13 @@ internal static class PronomSignatureMatcher
     // bytes might only be a leading prefix of the real file:
     //   RejectIfPresent (Sniff) - merely *having* an EOF sequence disqualifies the
     //     whole signature, since it can never be verified this way; guarantees every
-    //     match here would also be reported by Analyze.
-    //   Ignore (Guess) - EOF sequences are skipped rather than rejected, so a
+    //     match here would also be reported by Investigate.
+    //   Ignore (Spy) - EOF sequences are skipped rather than rejected, so a
     //     signature matches on its BOF portion alone. For a format whose BOF happens
     //     to be shared with another cataloged format (e.g. TIFF/DNG, GIF/Persuasion
     //     Player - see docs/adr/0017), skipping EOF for both sides means both match,
     //     surfacing the real ambiguity as a tie instead of silently guessing one.
-    //   Require (Analyze) - EOF sequences are evaluated against bytes' true end, so
+    //   Require (Investigate) - EOF sequences are evaluated against bytes' true end, so
     //     bytes must be the complete file.
     private enum EofPolicy
     {

@@ -1,16 +1,16 @@
 namespace MimeSpy;
 
 /// <inheritdoc/>
-public sealed partial class MimeSpy
+public sealed partial class MimeSpy : IMimeSpy
 {
-    // Unlike SignatureIndex.MaxHeaderReach (derived from the old CSV table so it
-    // can't drift), there's no small fixed byte count that reaches every PRONOM
-    // signature: most anchors sit in the first few hundred bytes, but a handful
-    // probe up to several thousand, and a few (BibTeX-style text formats) up to
-    // 15000 - and container-signature disambiguation needs the complete file
-    // regardless (see docs/adr/0016), so it isn't in Sniff's reach at any size. This
-    // is a chosen, revisable default balancing thoroughness against not reading a
-    // possibly-large file in full just to sniff its header.
+    // There's no small fixed byte count that reaches every PRONOM signature:
+    // most anchors sit in the first few hundred bytes, but a handful probe up
+    // to several thousand, and a few (BibTeX-style text formats) up to 15000 -
+    // and container-signature disambiguation needs the complete file
+    // regardless (see docs/adr/0016), so it isn't in Sniff's reach at any
+    // size. This is a chosen, revisable default balancing thoroughness
+    // against not reading a possibly-large file in full just to sniff its
+    // header.
     private const int SniffReadSize = 65536;
 
     /// <inheritdoc/>
@@ -68,18 +68,18 @@ public sealed partial class MimeSpy
         return Sniff(buffer.AsSpan(0, totalRead));
     }
 
-    // How much a Stream is worth fully buffering under Guess before falling back to
+    // How much a Stream is worth fully buffering under Spy before falling back to
     // a bounded peek - see docs/adr/0019. Chosen, like SniffReadSize, rather than
     // derived: comfortably past everyday documents/images/audio, well short of
     // "unboundedly large" so a caller who wanted a cheap peek never gets surprised
-    // by Guess quietly reading gigabytes.
-    private const long GuessFullReadThreshold = 8 * 1024 * 1024;
+    // by Spy quietly reading gigabytes.
+    private const long SpyFullReadThreshold = 8 * 1024 * 1024;
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Guess(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes));
+    public IReadOnlyList<PronomFormat> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes));
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Guess(Stream stream)
+    public IReadOnlyList<PronomFormat> Spy(Stream stream)
     {
         if (stream is null)
         {
@@ -87,13 +87,13 @@ public sealed partial class MimeSpy
         }
 
         // If the stream can tell us up front that it's small, read it all and get
-        // Analyze's fully-confirmed answer (real EOF check, container engine)
+        // Investigate's fully-confirmed answer (real EOF check, container engine)
         // instead of the peek-and-skip-EOF fallback below - see docs/adr/0019 for
         // why this is gated on a fact we already have (the stream's own reported
-        // length), not on trying Analyze and detecting whether it "worked".
-        if (TryGetRemainingLength(stream, out var remaining) && remaining <= GuessFullReadThreshold)
+        // length), not on trying Investigate and detecting whether it "worked".
+        if (TryGetRemainingLength(stream, out var remaining) && remaining <= SpyFullReadThreshold)
         {
-            return Analyze(stream);
+            return Investigate(stream);
         }
 
         var startPosition = stream.CanSeek ? stream.Position : -1;
@@ -109,28 +109,28 @@ public sealed partial class MimeSpy
             stream.Position = startPosition;
         }
 
-        return Guess(array.AsSpan(0, totalRead));
+        return Spy(array.AsSpan(0, totalRead));
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<PronomFormat>> GuessAsync(Stream stream, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<PronomFormat>> SpyAsync(Stream stream, CancellationToken cancellationToken = default)
     {
         if (stream is null)
         {
             throw new ArgumentNullException(nameof(stream));
         }
 
-        return GuessAsyncCore(stream, cancellationToken);
+        return SpyAsyncCore(stream, cancellationToken);
     }
 
-    private Task<IReadOnlyList<PronomFormat>> GuessAsyncCore(Stream stream, CancellationToken cancellationToken)
+    private Task<IReadOnlyList<PronomFormat>> SpyAsyncCore(Stream stream, CancellationToken cancellationToken)
     {
-        return TryGetRemainingLength(stream, out var remaining) && remaining <= GuessFullReadThreshold
-            ? AnalyzeAsyncCore(stream, cancellationToken)
-            : GuessBoundedPeekAsync(stream, cancellationToken);
+        return TryGetRemainingLength(stream, out var remaining) && remaining <= SpyFullReadThreshold
+            ? InvestigateAsyncCore(stream, cancellationToken)
+            : SpyBoundedPeekAsync(stream, cancellationToken);
     }
 
-    private async Task<IReadOnlyList<PronomFormat>> GuessBoundedPeekAsync(Stream stream, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<PronomFormat>> SpyBoundedPeekAsync(Stream stream, CancellationToken cancellationToken)
     {
         var startPosition = stream.CanSeek ? stream.Position : -1;
         var buffer = new byte[SniffReadSize];
@@ -141,7 +141,7 @@ public sealed partial class MimeSpy
             stream.Position = startPosition;
         }
 
-        return Guess(buffer.AsSpan(0, totalRead));
+        return Spy(buffer.AsSpan(0, totalRead));
     }
 
     private static bool TryGetRemainingLength(Stream stream, out long remaining)
@@ -156,19 +156,55 @@ public sealed partial class MimeSpy
         return false;
     }
 
-    /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Analyze(ReadOnlySpan<byte> bytes)
+#if NETSTANDARD2_0
+    private static int ReadAtLeast(Stream stream, byte[] buffer)
     {
-        // Unlike the Stream overloads (which already hold an array and can hand it
-        // to AnalyzeCore untouched - see their own comments), a caller-supplied span
-        // isn't necessarily backed by an array this method can keep past the call,
-        // so this copy is the one truly unavoidable one.
-        var array = bytes.ToArray();
-        return AnalyzeCore(array, array.Length);
+        var totalRead = 0;
+        while (totalRead < buffer.Length)
+        {
+            var read = stream.Read(buffer, totalRead, buffer.Length - totalRead);
+            if (read == 0)
+            {
+                break;
+            }
+
+            totalRead += read;
+        }
+
+        return totalRead;
+    }
+#endif
+
+    private static async Task<int> ReadAtLeastAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
+    {
+        var totalRead = 0;
+        while (totalRead < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer, totalRead, buffer.Length - totalRead, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            totalRead += read;
+        }
+
+        return totalRead;
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Analyze(Stream stream)
+    public IReadOnlyList<PronomFormat> Investigate(ReadOnlySpan<byte> bytes)
+    {
+        // Unlike the Stream overloads (which already hold an array and can hand it
+        // to InvestigateCore untouched - see their own comments), a caller-supplied
+        // span isn't necessarily backed by an array this method can keep past the
+        // call, so this copy is the one truly unavoidable one.
+        var array = bytes.ToArray();
+        return InvestigateCore(array, array.Length);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<PronomFormat> Investigate(Stream stream)
     {
         if (stream is null)
         {
@@ -190,21 +226,21 @@ public sealed partial class MimeSpy
         // alongside it, never against the array's own (possibly larger) Length. This
         // is what makes a large file's peak memory here ~1x its size instead of the
         // 2-3x an extra ToArray()/per-reader copy would cost.
-        return AnalyzeCore(buffer.GetBuffer(), (int)buffer.Length);
+        return InvestigateCore(buffer.GetBuffer(), (int)buffer.Length);
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<PronomFormat>> AnalyzeAsync(Stream stream, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<PronomFormat>> InvestigateAsync(Stream stream, CancellationToken cancellationToken = default)
     {
         if (stream is null)
         {
             throw new ArgumentNullException(nameof(stream));
         }
 
-        return AnalyzeAsyncCore(stream, cancellationToken);
+        return InvestigateAsyncCore(stream, cancellationToken);
     }
 
-    private async Task<IReadOnlyList<PronomFormat>> AnalyzeAsyncCore(Stream stream, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<PronomFormat>> InvestigateAsyncCore(Stream stream, CancellationToken cancellationToken)
     {
         var startPosition = stream.CanSeek ? stream.Position : -1;
         using var buffer = new MemoryStream();
@@ -219,12 +255,12 @@ public sealed partial class MimeSpy
             stream.Position = startPosition;
         }
 
-        return AnalyzeCore(buffer.GetBuffer(), (int)buffer.Length);
+        return InvestigateCore(buffer.GetBuffer(), (int)buffer.Length);
     }
 
-    // bytes may be larger than length (see Analyze(Stream)'s own comment) - every
-    // reader this reaches is written to respect length rather than bytes.Length.
-    private static IReadOnlyList<PronomFormat> AnalyzeCore(byte[] bytes, int length) =>
+    // bytes may be larger than length (see Investigate(Stream)'s own comment) -
+    // every reader this reaches is written to respect length rather than bytes.Length.
+    private static IReadOnlyList<PronomFormat> InvestigateCore(byte[] bytes, int length) =>
         ToPublic(PronomContainerMatcher.Refine(bytes, length, PronomSignatureMatcher.FindMatchesFull(bytes.AsSpan(0, length))));
 
     private static IReadOnlyList<PronomFormat> ToPublic(IReadOnlyList<PronomFileFormat> formats) =>
@@ -233,7 +269,7 @@ public sealed partial class MimeSpy
 
 /// <summary>
 /// A PRONOM file format that matched, from <see cref="MimeSpy.Sniff(ReadOnlySpan{byte})"/>,
-/// <see cref="MimeSpy.Guess(ReadOnlySpan{byte})"/>, or <see cref="MimeSpy.Analyze(ReadOnlySpan{byte})"/>
+/// <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/>, or <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/>
 /// (and their overloads).
 /// </summary>
 /// <param name="Puid">The PRONOM Unique Identifier (e.g. <c>"fmt/412"</c>, <c>"x-fmt/263"</c>) - PRONOM's own stable format key.</param>

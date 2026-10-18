@@ -1,4 +1,4 @@
-# Guess skips EOF confirmation entirely, rather than precomputing a uniqueness flag
+# Spy skips EOF confirmation entirely, rather than precomputing a uniqueness flag
 
 docs/adr/0016 established that `Sniff` rejects any signature carrying an
 end-of-file-anchored `ByteSequence` outright, since a leading-bytes buffer
@@ -23,7 +23,7 @@ match result. That turned out to be more machinery than the problem needs.
 `FindMatchesGuess` instead just changes how EOF sequences are treated during
 the exact same walk `FindMatchesForward`/`FindMatchesFull` already do:
 skipped, rather than rejecting the signature (`Sniff`) or requiring them
-against the true end of file (`Analyze`). That one change reproduces both
+against the true end of file (`Investigate`). That one change reproduces both
 outcomes for free:
 
 - A format with a globally-unique BOF: skipping its EOF check leaves only the
@@ -34,12 +34,12 @@ outcomes for free:
   guessing one over the other - consistent with docs/adr/0001's existing
   position that ambiguous matches are returned as ties, not silently resolved.
 
-The tradeoff this buys: `Guess`'s results are no longer guaranteed to be a
-subset of what `Analyze` would report for the same file's complete bytes. A
+The tradeoff this buys: `Spy`'s results are no longer guaranteed to be a
+subset of what `Investigate` would report for the same file's complete bytes. A
 GIF truncated before its trailer byte, or a DNG file, would both still report
-as a match under `Guess` even though one is genuinely broken and the other
+as a match under `Spy` even though one is genuinely broken and the other
 needs its EOF check to know it's DNG rather than plain TIFF. Callers who need
-the stronger guarantee - "if `Sniff` matched, `Analyze` will agree" - keep
+the stronger guarantee - "if `Sniff` matched, `Investigate` will agree" - keep
 using `Sniff`; callers who want the best answer obtainable from a partial
 read, and can tolerate PRONOM's own signature not having fully confirmed it,
-use `Guess`.
+use `Spy`.

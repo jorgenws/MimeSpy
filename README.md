@@ -45,6 +45,8 @@ Tests use xunit v3 on the Microsoft.Testing.Platform runner; both test projects 
 
 `MimeSpy.Tests` is mostly hand-built byte arrays covering specific signature-matching and disambiguation rules. `MimeSpy.IntegrationTests` runs `Investigate()` against real, genuinely-encoded sample files - one per mainstream format - committed under `MimeSpy.IntegrationTests/Fixtures/`; see that project's README for where each one came from.
 
+`MimeSpy.Benchmarks` compares `Investigate()`'s speed and detected formats against [Mime-Detective](https://github.com/MediatedCommunications/Mime-Detective), the closest actively-maintained .NET equivalent - see that project's README.
+
 See [docs/releasing.md](docs/releasing.md) for how to cut a new NuGet release.
 
 ## Data

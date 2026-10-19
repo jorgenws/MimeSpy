@@ -46,6 +46,14 @@ internal sealed class PronomOle2ContainerReader
     private byte[]? _miniFat;
     private byte[]? _miniStream;
 
+    // PronomContainerMatcher tries every OLE2 container signature PRONOM has (not
+    // just ones plausible for this file - see PronomContainerMatcher's own comment),
+    // and many of them name the same stream (e.g. "SummaryInformation" alone appears
+    // in 25 of them) - caching by path, for this reader's lifetime (one Refine()
+    // call), turns those back into a single sector-chain walk and copy instead of one
+    // per signature that asks for it.
+    private readonly Dictionary<string, byte[]?> _streamCache = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly record struct DirectoryEntry(string Name, byte ObjectType, uint Left, uint Right, uint Child, uint StartSector, ulong StreamSize);
 
     private PronomOle2ContainerReader(byte[] bytes, int length, int sectorSize, uint[] difat, uint firstMiniFatSector, uint miniFatSectorCount, ulong miniStreamCutoff, List<DirectoryEntry> entries, int rootIndex)
@@ -110,6 +118,18 @@ internal sealed class PronomOle2ContainerReader
     /// but the last, stream for the last).
     /// </summary>
     public byte[]? TryReadStream(string path)
+    {
+        if (_streamCache.TryGetValue(path, out var cached))
+        {
+            return cached;
+        }
+
+        var content = ReadStream(path);
+        _streamCache[path] = content;
+        return content;
+    }
+
+    private byte[]? ReadStream(string path)
     {
         var segments = path.Split('/');
         var currentChild = _entries[_rootIndex].Child;

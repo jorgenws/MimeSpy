@@ -14,6 +14,14 @@ internal sealed class PronomZipContainerReader : IDisposable
     private readonly MemoryStream _stream;
     private readonly ZipArchive _archive;
 
+    // PronomContainerMatcher tries every ZIP container signature PRONOM has (not just
+    // ones plausible for this file - see PronomContainerMatcher's own comment), and
+    // many of them name the same entry (e.g. "[Content_Types].xml" alone appears in
+    // 32 of them) - caching by path, for this reader's lifetime (one Refine() call),
+    // turns those back into a single decompress-and-copy instead of one per signature
+    // that asks for it.
+    private readonly Dictionary<string, byte[]?> _entryCache = new(StringComparer.Ordinal);
+
     private PronomZipContainerReader(MemoryStream stream, ZipArchive archive)
     {
         _stream = stream;
@@ -42,6 +50,18 @@ internal sealed class PronomZipContainerReader : IDisposable
 
     /// <summary>The full decompressed content of the entry at <paramref name="path"/>, or null if it doesn't exist.</summary>
     public byte[]? TryReadEntry(string path)
+    {
+        if (_entryCache.TryGetValue(path, out var cached))
+        {
+            return cached;
+        }
+
+        var content = ReadEntry(path);
+        _entryCache[path] = content;
+        return content;
+    }
+
+    private byte[]? ReadEntry(string path)
     {
         var entry = _archive.GetEntry(path);
         if (entry is null)

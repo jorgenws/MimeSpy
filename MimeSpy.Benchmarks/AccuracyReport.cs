@@ -30,24 +30,27 @@ internal static class AccuracyReport
         var fixturesDir = Path.Combine(AppContext.BaseDirectory, "Fixtures");
         var files = Directory.GetFiles(fixturesDir).OrderBy(f => f, StringComparer.OrdinalIgnoreCase);
 
-        Console.WriteLine($"{"File",-14} {"MimeSpy (Investigate)",-45} {"Mime-Detective Default",-30} {"Mime-Detective Condensed",-30}");
-        Console.WriteLine(new string('-', 120));
+        Console.WriteLine($"{"File",-14} {"MimeSpy (Investigate)",-35} {"MimeSpy (Spy)",-35} {"Mime-Detective Default",-30} {"Mime-Detective Condensed",-30}");
+        Console.WriteLine(new string('-', 150));
 
         foreach (var file in files)
         {
             var bytes = File.ReadAllBytes(file);
             var name = Path.GetFileName(file);
 
-            var spyMatches = spy.Investigate(bytes);
-            var spyResult = spyMatches.Count == 0
-                ? "(no match)"
-                : string.Join(", ", spyMatches.Select(f => f.MimeType ?? $"({f.Puid}, no mime type)"));
+            var investigateResult = DescribeMimeSpy(spy.Investigate(bytes));
+            var spyResult = DescribeMimeSpy(spy.Spy(bytes));
             var defaultResult = Describe(defaultInspector.Inspect(bytes));
             var condensedResult = Describe(condensedInspector.Inspect(bytes));
 
-            Console.WriteLine($"{name,-14} {Truncate(spyResult, 45),-45} {Truncate(defaultResult, 30),-30} {Truncate(condensedResult, 30),-30}");
+            Console.WriteLine($"{name,-14} {Truncate(investigateResult, 35),-35} {Truncate(spyResult, 35),-35} {Truncate(defaultResult, 30),-30} {Truncate(condensedResult, 30),-30}");
         }
     }
+
+    private static string DescribeMimeSpy(IReadOnlyCollection<PronomFormat> matches) =>
+        matches.Count == 0
+            ? "(no match)"
+            : string.Join(", ", matches.Select(f => f.MimeType ?? $"({f.Puid}, no mime type)"));
 
     private static string Describe(IReadOnlyCollection<DefinitionMatch> matches)
     {

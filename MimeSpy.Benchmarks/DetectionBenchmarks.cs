@@ -6,15 +6,25 @@ using MimeDetective.Definitions.Licensing;
 namespace MimeSpy.Benchmarks;
 
 /// <summary>
-/// Compares MimeSpy's <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/> - the
-/// full-file, container-disambiguating method - against Mime-Detective's equivalent
-/// <c>ContentInspector.Inspect(byte[])</c>, using both of Mime-Detective's publicly
-/// available definition packs (its bundled "Default" set and the larger "Condensed"
-/// add-on package). Both libraries build their one-time lookup structures ahead of
-/// the timed region, per each library's own guidance.
+/// Compares both of MimeSpy's full-buffer detection methods against Mime-Detective's
+/// equivalent <c>ContentInspector.Inspect(byte[])</c>, using both of Mime-Detective's
+/// publicly available definition packs (its bundled "Default" set and the larger
+/// "Condensed" add-on package). Both libraries build their one-time lookup structures
+/// ahead of the timed region, per each library's own guidance.
+///
+/// <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/> and Mime-Detective's
+/// <c>Inspect</c> aren't quite doing the same amount of work: <c>Investigate</c> also
+/// runs PRONOM's container-signature engine (opening the ZIP/OLE2 archive to
+/// disambiguate docx/xlsx/ppt/etc. from a plain zip/OLE2 match) and evaluates
+/// end-of-file-anchored signatures for real - neither of which Mime-Detective's flat
+/// prefix/substring matching does at all (see its own <c>Storage.Signature</c> type -
+/// no EOF-anchored concept exists). <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/> skips
+/// both of those (docs/adr/0016, 0017), so it's the closer apples-to-apples comparison
+/// of "guess from raw bytes, no real parsing" - <c>Investigate</c> is kept alongside it
+/// to show what the extra correctness actually costs.
 /// </summary>
 [MemoryDiagnoser]
-public class InvestigateBenchmarks
+public class DetectionBenchmarks
 {
     private static readonly MimeSpy Spy = new();
 
@@ -49,6 +59,9 @@ public class InvestigateBenchmarks
 
     [Benchmark(Baseline = true)]
     public object MimeSpy_Investigate() => Spy.Investigate(_bytes);
+
+    [Benchmark]
+    public object MimeSpy_Spy() => Spy.Spy(_bytes);
 
     [Benchmark]
     public object MimeDetective_Default() => DefaultInspector.Inspect(_bytes);

@@ -6,8 +6,12 @@ namespace MimeSpy;
 /// <summary>
 /// Parses the embedded PRONOM DROID signature file once into
 /// <see cref="PronomInternalSignature"/> and <see cref="PronomFileFormat"/> tables,
-/// keyed so a match can walk from an internal signature ID back to the formats that
-/// claim it. The XML also carries per-fragment Boyer-Moore-Horspool shift tables
+/// plus two indexes <see cref="PronomSignatureMatcher"/> uses to avoid evaluating
+/// every cataloged signature against every file: <see cref="FindSignatureIdsByFirstByte"/>
+/// (signatures whose BOF anchor can only ever match at a known, fixed first byte) and
+/// <see cref="FindFormatsBySignatureId"/> (walking a matched signature ID back to the
+/// format(s) that claim it, the reverse of <see cref="PronomFileFormat.InternalSignatureIds"/>).
+/// The XML also carries per-fragment Boyer-Moore-Horspool shift tables
 /// (&lt;Shift&gt;/&lt;DefaultShift&gt;) that speed up DROID's own search - this parser
 /// never reads them, since <see cref="PronomSignatureMatcher"/> gets the same result
 /// from <see cref="ReadOnlySpan{T}"/>'s built-in (also optimized) search instead.
@@ -17,10 +21,11 @@ internal static class PronomSignatureIndex
     private const string ResourceName = "pronom-droid-signatures.xml";
 
     private static readonly Dictionary<int, PronomInternalSignature> SignaturesById;
-    private static readonly Dictionary<int, List<PronomFileFormat>> FormatsBySignatureId;
     private static readonly Dictionary<string, PronomFileFormat> FormatByPuid;
+    private static readonly Dictionary<int, List<PronomFileFormat>> FormatsBySignatureId;
+    private static readonly Dictionary<byte, List<int>> SignatureIdsByFirstByte;
 
-    public static IReadOnlyList<PronomFileFormat> Formats { get; }
+    public static IReadOnlyList<int> SignatureIdsWithoutFixedFirstByte { get; }
 
     static PronomSignatureIndex()
     {
@@ -51,11 +56,16 @@ internal static class PronomSignatureIndex
         }
 
         SignaturesById = signaturesById;
-        Formats = formats;
 
+        var formatByPuid = new Dictionary<string, PronomFileFormat>(StringComparer.Ordinal);
         var formatsBySignatureId = new Dictionary<int, List<PronomFileFormat>>();
         foreach (var format in formats)
         {
+            if (!formatByPuid.ContainsKey(format.Puid))
+            {
+                formatByPuid[format.Puid] = format;
+            }
+
             foreach (var signatureId in format.InternalSignatureIds)
             {
                 if (!formatsBySignatureId.TryGetValue(signatureId, out var bucket))
@@ -68,19 +78,36 @@ internal static class PronomSignatureIndex
             }
         }
 
+        FormatByPuid = formatByPuid;
         FormatsBySignatureId = formatsBySignatureId;
 
-        var formatByPuid = new Dictionary<string, PronomFileFormat>(StringComparer.Ordinal);
-        foreach (var format in formats)
+        var signatureIdsByFirstByte = new Dictionary<byte, List<int>>();
+        var signatureIdsWithoutFixedFirstByte = new List<int>();
+        foreach (var signature in signaturesById.Values)
         {
-            if (!formatByPuid.ContainsKey(format.Puid))
+            if (TryGetRequiredFirstByte(signature) is byte firstByte)
             {
-                formatByPuid[format.Puid] = format;
+                if (!signatureIdsByFirstByte.TryGetValue(firstByte, out var bucket))
+                {
+                    bucket = [];
+                    signatureIdsByFirstByte[firstByte] = bucket;
+                }
+
+                bucket.Add(signature.Id);
+            }
+            else
+            {
+                signatureIdsWithoutFixedFirstByte.Add(signature.Id);
             }
         }
 
-        FormatByPuid = formatByPuid;
+        SignatureIdsByFirstByte = signatureIdsByFirstByte;
+        SignatureIdsWithoutFixedFirstByte = signatureIdsWithoutFixedFirstByte;
     }
+
+    public static PronomInternalSignature GetSignature(int id) => SignaturesById[id];
+
+    public static PronomFileFormat? FindFormatByPuid(string puid) => FormatByPuid.TryGetValue(puid, out var format) ? format : null;
 
     /// <summary>
     /// Every format that claims <paramref name="signatureId"/> as one of its
@@ -89,9 +116,49 @@ internal static class PronomSignatureIndex
     public static IReadOnlyList<PronomFileFormat> FindFormatsBySignatureId(int signatureId) =>
         FormatsBySignatureId.TryGetValue(signatureId, out var bucket) ? bucket : [];
 
-    public static PronomInternalSignature GetSignature(int id) => SignaturesById[id];
+    /// <summary>
+    /// Every signature whose <see cref="TryGetRequiredFirstByte"/> is exactly
+    /// <paramref name="firstByte"/> - i.e. signatures that can be skipped outright for
+    /// a buffer whose own first byte doesn't equal this one. Signatures
+    /// <see cref="TryGetRequiredFirstByte"/> can't pin down a single required byte for
+    /// are never in here - see <see cref="SignatureIdsWithoutFixedFirstByte"/>.
+    /// </summary>
+    public static IReadOnlyList<int> FindSignatureIdsByFirstByte(byte firstByte) =>
+        SignatureIdsByFirstByte.TryGetValue(firstByte, out var bucket) ? bucket : [];
 
-    public static PronomFileFormat? FindFormatByPuid(string puid) => FormatByPuid.TryGetValue(puid, out var format) ? format : null;
+    /// <summary>
+    /// A signature's BOF anchor requires a specific byte at offset 0 only when its
+    /// first (closest-to-start) <see cref="PronomByteSequence"/> has a first
+    /// <see cref="PronomSubSequence"/> that (a) must sit at exactly offset 0 - no gap
+    /// either side (<c>MinOffset == MaxOffset == 0</c>) and nothing chained further
+    /// left of it (<see cref="PronomSubSequence.LeftFragmentGroups"/> empty, always
+    /// true in practice for a signature's very first unit, but checked rather than
+    /// assumed) - and (b) starts with a single plain <see cref="PronomLiteralToken"/>,
+    /// not a wildcard. Every other shape (a gap before the anchor, a wildcarded first
+    /// byte, EOF-only signatures with no BOF sequence at all, ...) can't be pinned to
+    /// one required byte, so is left for <see cref="SignatureIdsWithoutFixedFirstByte"/>
+    /// to always evaluate - this only ever narrows candidates, never excludes one that
+    /// could legitimately match.
+    /// </summary>
+    private static byte? TryGetRequiredFirstByte(PronomInternalSignature signature)
+    {
+        foreach (var byteSequence in signature.ByteSequences)
+        {
+            if (byteSequence.Anchor != PronomAnchor.BeginningOfFile || byteSequence.SubSequences.Count == 0)
+            {
+                continue;
+            }
+
+            var first = byteSequence.SubSequences[0];
+            if (first.MinOffset == 0 && first.MaxOffset == 0 && first.LeftFragmentGroups.Count == 0 &&
+                first.Anchor.Tokens is [PronomLiteralToken literal, ..])
+            {
+                return literal.Value;
+            }
+        }
+
+        return null;
+    }
 
     private static PronomFileFormat ParseFileFormat(XmlReader reader)
     {

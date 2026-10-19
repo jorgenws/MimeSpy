@@ -67,26 +67,53 @@ internal static class PronomSignatureMatcher
     /// </summary>
     public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, EofPolicy.Require);
 
+    // Rather than walking every cataloged format's signature(s) against every file,
+    // only signatures that could possibly match bytes[0] are tried: those indexed
+    // under that exact byte, plus the (much smaller) set PronomSignatureIndex
+    // couldn't pin to one required first byte at all (see its own
+    // TryGetRequiredFirstByte doc) - those are always tried, so this never excludes
+    // a signature that could legitimately match, only ones whose own BOF anchor
+    // proves it can't.
     private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> bytes, EofPolicy eofPolicy)
     {
         List<PronomFileFormat>? matches = null;
+        HashSet<int>? matchedFormatIds = null;
 
-        foreach (var format in PronomSignatureIndex.Formats)
+        if (bytes.Length > 0)
         {
-            foreach (var signatureId in format.InternalSignatureIds)
+            TryMatchCandidates(PronomSignatureIndex.FindSignatureIdsByFirstByte(bytes[0]), bytes, eofPolicy, ref matches, ref matchedFormatIds);
+        }
+
+        TryMatchCandidates(PronomSignatureIndex.SignatureIdsWithoutFixedFirstByte, bytes, eofPolicy, ref matches, ref matchedFormatIds);
+
+        return matches ?? (IReadOnlyList<PronomFileFormat>)[];
+    }
+
+    // matchedFormatIds dedupes across the two candidate sets above, and across a
+    // single format's own alternative signatures (PronomFileFormat.InternalSignatureIds
+    // is an OR - a format with two alternative signatures that both match must still
+    // only appear once).
+    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> bytes, EofPolicy eofPolicy, ref List<PronomFileFormat>? matches, ref HashSet<int>? matchedFormatIds)
+    {
+        foreach (var signatureId in signatureIds)
+        {
+            if (!Matches(PronomSignatureIndex.GetSignature(signatureId), bytes, eofPolicy))
             {
-                if (!Matches(PronomSignatureIndex.GetSignature(signatureId), bytes, eofPolicy))
+                continue;
+            }
+
+            foreach (var format in PronomSignatureIndex.FindFormatsBySignatureId(signatureId))
+            {
+                matchedFormatIds ??= [];
+                if (!matchedFormatIds.Add(format.Id))
                 {
                     continue;
                 }
 
                 matches ??= [];
                 matches.Add(format);
-                break;
             }
         }
-
-        return matches ?? (IReadOnlyList<PronomFileFormat>)[];
     }
 
     // A handful of signatures combine wide-open fragment gaps (PRONOM's 999999

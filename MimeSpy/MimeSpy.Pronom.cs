@@ -27,76 +27,20 @@ public sealed partial class MimeSpy : IMimeSpy
         }
     }
 
-    // There's no small fixed byte count that reaches every PRONOM signature:
-    // most anchors sit in the first few hundred bytes, but a handful probe up
-    // to several thousand, and a few (BibTeX-style text formats) up to 15000 -
-    // and container-signature disambiguation needs the complete file
-    // regardless (see docs/adr/0016), so it isn't in Sniff's reach at any
-    // size. This is a chosen, revisable default balancing thoroughness
-    // against not reading a possibly-large file in full just to sniff its
-    // header.
-    private const int SniffReadSize = 65536;
-
-    /// <inheritdoc/>
-    public IReadOnlyList<Dossier> Sniff(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesForward(bytes, _filter));
-
-    /// <inheritdoc/>
-    public IReadOnlyList<Dossier> Sniff(Stream stream)
-    {
-        if (stream is null)
-        {
-            throw new ArgumentNullException(nameof(stream));
-        }
-
-        var startPosition = stream.CanSeek ? stream.Position : -1;
-
-        // Always a heap array, unlike Spy(Stream)'s stackalloc - SniffReadSize is
-        // large enough that stack-allocating it would risk a stack overflow.
-        var array = new byte[SniffReadSize];
-#if NETSTANDARD2_0
-        var totalRead = ReadAtLeast(stream, array);
-#else
-        var totalRead = stream.ReadAtLeast(array.AsSpan(), array.Length, throwOnEndOfStream: false);
-#endif
-
-        if (startPosition >= 0)
-        {
-            stream.Position = startPosition;
-        }
-
-        return Sniff(array.AsSpan(0, totalRead));
-    }
-
-    /// <inheritdoc/>
-    public Task<IReadOnlyList<Dossier>> SniffAsync(Stream stream, CancellationToken cancellationToken = default)
-    {
-        if (stream is null)
-        {
-            throw new ArgumentNullException(nameof(stream));
-        }
-
-        return SniffAsyncCore(stream, cancellationToken);
-    }
-
-    private async Task<IReadOnlyList<Dossier>> SniffAsyncCore(Stream stream, CancellationToken cancellationToken)
-    {
-        var startPosition = stream.CanSeek ? stream.Position : -1;
-        var buffer = new byte[SniffReadSize];
-        var totalRead = await ReadAtLeastAsync(stream, buffer, cancellationToken).ConfigureAwait(false);
-
-        if (startPosition >= 0)
-        {
-            stream.Position = startPosition;
-        }
-
-        return Sniff(buffer.AsSpan(0, totalRead));
-    }
+    // How much of a Stream to read for Spy's bounded-peek fallback (non-seekable, or
+    // seekable but larger than SpyFullReadThreshold below). There's no small fixed
+    // byte count that reaches every PRONOM signature: most anchors sit in the first
+    // few hundred bytes, but a handful probe up to several thousand, and a few
+    // (BibTeX-style text formats) up to 15000 - so this is a chosen, revisable
+    // default balancing thoroughness against not reading a possibly-large file in
+    // full just to peek its header.
+    private const int SpyPeekReadSize = 65536;
 
     // How much a Stream is worth fully buffering under Spy before falling back to
-    // a bounded peek - see docs/adr/0019. Chosen, like SniffReadSize, rather than
-    // derived: comfortably past everyday documents/images/audio, well short of
-    // "unboundedly large" so a caller who wanted a cheap peek never gets surprised
-    // by Spy quietly reading gigabytes.
+    // the bounded peek above - see docs/adr/0019. Chosen the same way: comfortably
+    // past everyday documents/images/audio, well short of "unboundedly large" so a
+    // caller who wanted a cheap peek never gets surprised by Spy quietly reading
+    // gigabytes.
     private const long SpyFullReadThreshold = 8 * 1024 * 1024;
 
     /// <inheritdoc/>
@@ -121,7 +65,7 @@ public sealed partial class MimeSpy : IMimeSpy
         }
 
         var startPosition = stream.CanSeek ? stream.Position : -1;
-        var array = new byte[SniffReadSize];
+        var array = new byte[SpyPeekReadSize];
 #if NETSTANDARD2_0
         var totalRead = ReadAtLeast(stream, array);
 #else
@@ -157,7 +101,7 @@ public sealed partial class MimeSpy : IMimeSpy
     private async Task<IReadOnlyList<Dossier>> SpyBoundedPeekAsync(Stream stream, CancellationToken cancellationToken)
     {
         var startPosition = stream.CanSeek ? stream.Position : -1;
-        var buffer = new byte[SniffReadSize];
+        var buffer = new byte[SpyPeekReadSize];
         var totalRead = await ReadAtLeastAsync(stream, buffer, cancellationToken).ConfigureAwait(false);
 
         if (startPosition >= 0)
@@ -293,8 +237,8 @@ public sealed partial class MimeSpy : IMimeSpy
 
 /// <summary>
 /// Everything PRONOM knows about one format that matched, from
-/// <see cref="MimeSpy.Sniff(ReadOnlySpan{byte})"/>, <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/>,
-/// or <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/> (and their overloads).
+/// <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/> or <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/>
+/// (and their overloads).
 /// </summary>
 /// <param name="Puid">The PRONOM Unique Identifier (e.g. <c>"fmt/412"</c>, <c>"x-fmt/263"</c>) - PRONOM's own stable format key.</param>
 /// <param name="Name">The format's name, as PRONOM records it (e.g. <c>"Microsoft Word for Windows"</c>).</param>

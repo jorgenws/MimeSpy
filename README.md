@@ -17,22 +17,60 @@ foreach (var result in results)
 MimeSpy identifies formats using [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/), the UK National Archives' file-format signature registry, through three methods that trade how much of the file you can give them for how confirmed the answer is:
 
 - **`Sniff`** only evaluates signatures anchored to the start of the file. Safe against a partial or streamed-in-pieces buffer - anything it reports is guaranteed to also be reported by `Investigate` against the same file's complete bytes - but it can't report a format whose every PRONOM signature needs to check the file's end (PNG, JPEG, GIF, and plain ZIP among them).
-- **`Spy`** reports everything `Sniff` does, plus formats PRONOM can only fully confirm by a trailer near the end of the file - the practical default for a quick "what kind of file is this" guess from a partial read. Unlike `Sniff`, a match here isn't guaranteed to hold up once the whole file is checked. Given a `Stream` whose length is known and small, `Spy` reads it in full and returns `Investigate`'s fully-confirmed answer instead of guessing from a partial read.
+- **`Spy`** reports everything `Sniff` does, plus formats PRONOM can only fully confirm by a trailer near the end of the file - the practical default for a quick "what kind of file is this" guess from a partial read. Unlike `Sniff`, a match here isn't guaranteed to hold up once the whole file is checked.
 - **`Investigate`** requires the complete file. It evaluates end-anchored signatures for real, and runs PRONOM's container-signature engine to resolve a generic ZIP/OLE2 match to its specific format (docx vs xlsx vs plain zip, doc vs xls, ...).
 
 A single header can genuinely match more than one format, so callers should expect more than one `PronomFormat` back from any of these - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md). The three-way split, what each one can and can't see, and why, is covered in [docs/adr/0016](docs/adr/0016-sniff-and-investigate-split-by-what-end-of-file-they-can-see.md), [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md), and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
 
 All three take a `ReadOnlySpan<byte>` or a `Stream`, and the `Stream` overloads have async twins (`SniffAsync`/`SpyAsync`/`InvestigateAsync`). There's no async overload of the `ReadOnlySpan<byte>` form - see [docs/adr/0014-async-overload-only-on-the-stream-api.md](docs/adr/0014-async-overload-only-on-the-stream-api.md).
 
+### `Spy`'s two overloads aren't the same guess
+
+`Spy(ReadOnlySpan<byte>)` always does the header-only guess above, no matter how much of the span you hand it - a span's length doesn't tell MimeSpy whether it's the complete file or a truncated prefix, so it never tries to infer that. If you already know you're holding the complete file, call `Investigate(ReadOnlySpan<byte>)` directly instead of asking `Spy` to guess at something you already know.
+
+`Spy(Stream)` is smarter, because a `Stream` *can* answer that question honestly: if the stream is seekable and its reported length is small (≤ 8 MB), `Spy` reads it in full and returns `Investigate`'s fully-confirmed answer - real end-of-file checks, real container disambiguation - instead of a partial-read guess. Only a non-seekable or larger stream falls back to the bounded, header-only peek. See [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md) for why this is gated on a fact the stream already reports, not on trying `Investigate` and detecting whether it "worked".
+
+### Limiting which formats are considered
+
+If you already know you'll only ever hand MimeSpy one broad category of file - say, a service that only ever ingests images - `MimeSpyOptions` lets a `MimeSpy` instance skip the rest of PRONOM's catalog entirely on every call, rather than matching against it and discarding the result:
+
+```csharp
+var spy = new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/", "audio/"] });
+```
+
+`MimeTypes` patterns are matched by case-insensitive starting-with against each format's own MIME type - `"image/"` catches every image subtype, `"application/pdf"` catches that one exactly - and are additive: a format is included if it matches *any* pattern. The default (no options at all, or an empty `MimeTypes` list) considers every cataloged format, identical to `new MimeSpy()`. The narrowed index is built once, at construction, not per call.
+
 ### Dependency injection
 
-MimeSpy has no constructor arguments and no mutable state - every method here is safe to call concurrently from multiple requests on the same instance - so it only needs registering as a singleton, with no MimeSpy-specific extension method required:
+The default `MimeSpy()` constructor takes no arguments, and a `MimeSpy` instance - filtered or not - has no mutable state once built, so every method is safe to call concurrently from multiple requests on the same instance. Register it as a singleton, with no MimeSpy-specific extension method required:
 
 ```csharp
 services.AddSingleton<IMimeSpy, MimeSpy>();
 ```
 
-Consumers then take an `IMimeSpy` constructor dependency like any other singleton service. The interface exists purely as a mockable seam for callers whose own flow calls these methods inline rather than taking a pre-computed `PronomFormat` list as input.
+Consumers then take an `IMimeSpy` constructor dependency like any other singleton service. The interface exists purely as a mockable seam for callers whose own flow calls these methods inline rather than taking a pre-computed `PronomFormat` list as input. To register a filtered instance instead, resolve `MimeSpyOptions` through DI or build the singleton yourself:
+
+```csharp
+services.AddSingleton<IMimeSpy>(new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/"] }));
+```
+
+## Performance
+
+`MimeSpy.Benchmarks` has the full BenchmarkDotNet suite and its own README; these are a couple of representative numbers from it (per-call mean / allocated, `Investigate` unless noted).
+
+`Spy` vs `Investigate` on the same file - usually close (the extra work `Investigate` does, EOF confirmation and container disambiguation, is cheap for most formats), but not always:
+
+| File | `Investigate` | `Spy` |
+| --- | --- | --- |
+| sample.mp3 | 244 µs / 675 KB | 120 µs / 134 KB |
+| sample.zip | 89 µs / 109 KB | 83 µs / 91 KB |
+
+`MimeSpyOptions` scoping to `image/` - an order of magnitude, on both a file it matches and one it doesn't (the filtered instance still has to conclude "not an image," just over a far smaller candidate set):
+
+| File | Unfiltered | `MimeTypes = ["image/"]` |
+| --- | --- | --- |
+| sample.png | 84 µs / 74 KB | 5.9 µs / 8.2 KB |
+| sample.pdf | 751 µs / 138 KB | 55 µs / 40 KB |
 
 ## Building & testing
 
@@ -45,7 +83,7 @@ Tests use xunit v3 on the Microsoft.Testing.Platform runner; both test projects 
 
 `MimeSpy.Tests` is mostly hand-built byte arrays covering specific signature-matching and disambiguation rules. `MimeSpy.IntegrationTests` runs `Investigate()` against real, genuinely-encoded sample files - one per mainstream format - committed under `MimeSpy.IntegrationTests/Fixtures/`; see that project's README for where each one came from.
 
-`MimeSpy.Benchmarks` compares `Investigate()`'s speed and detected formats against [Mime-Detective](https://github.com/MediatedCommunications/Mime-Detective), the closest actively-maintained .NET equivalent - see that project's README.
+`MimeSpy.Benchmarks` has the full BenchmarkDotNet suite behind the [Performance](#performance) numbers above, plus a comparison against [Mime-Detective](https://github.com/MediatedCommunications/Mime-Detective), the closest actively-maintained .NET equivalent - see that project's README.
 
 See [docs/releasing.md](docs/releasing.md) for how to cut a new NuGet release.
 

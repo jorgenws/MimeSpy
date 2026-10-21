@@ -17,10 +17,7 @@ internal static class PronomSignatureMatcher
 {
     // How a signature's end-of-file-anchored ByteSequences are treated when
     // bytes might only be a leading prefix of the real file:
-    //   RejectIfPresent (Sniff) - merely *having* an EOF sequence disqualifies the
-    //     whole signature, since it can never be verified this way; guarantees every
-    //     match here would also be reported by Investigate.
-    //   Ignore (Spy) - EOF sequences are skipped rather than rejected, so a
+    //   Ignore (Spy) - EOF sequences are skipped rather than evaluated, so a
     //     signature matches on its BOF portion alone. For a format whose BOF happens
     //     to be shared with another cataloged format (e.g. TIFF/DNG, GIF/Persuasion
     //     Player - see docs/adr/0017), skipping EOF for both sides means both match,
@@ -29,28 +26,17 @@ internal static class PronomSignatureMatcher
     //     bytes must be the complete file.
     private enum EofPolicy
     {
-        RejectIfPresent,
         Ignore,
         Require,
     }
 
     /// <summary>
-    /// Matches signatures whose byte sequences are all anchored to the start of the
-    /// file, against a buffer that may only be a leading prefix of the real file.
-    /// Signatures with an end-of-file-anchored sequence can never be evaluated safely
-    /// this way - <paramref name="bytes"/> might not reach the real end of file - so
-    /// they're skipped rather than matched against a false EOF. See
-    /// <see cref="FindMatchesGuess"/> for a more permissive alternative.
-    /// </summary>
-    public static IReadOnlyList<PronomFileFormat> FindMatchesForward(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, EofPolicy.RejectIfPresent, filter);
-
-    /// <summary>
-    /// Matches signatures the same way as <see cref="FindMatchesForward"/>, except a
-    /// signature's end-of-file-anchored sequences are skipped rather than
-    /// disqualifying it - so this can report a format PRONOM itself only considers
-    /// confirmed once its trailer is checked (docs/adr/0017). Unlike
-    /// <see cref="FindMatchesForward"/>, a match here is not guaranteed to also be
-    /// reported by <see cref="FindMatchesFull"/> against the same file's complete bytes.
+    /// Matches signatures against a buffer that may only be a leading prefix of the
+    /// real file, skipping a signature's end-of-file-anchored sequences rather than
+    /// evaluating them - so this can report a format PRONOM itself only considers
+    /// confirmed once its trailer is checked (docs/adr/0017). A match here is not
+    /// guaranteed to also be reported by <see cref="FindMatchesFull"/> against the
+    /// same file's complete bytes.
     /// </summary>
     public static IReadOnlyList<PronomFileFormat> FindMatchesGuess(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, EofPolicy.Ignore, filter);
 
@@ -154,19 +140,14 @@ internal static class PronomSignatureMatcher
         {
             if (byteSequence.Anchor == PronomAnchor.EndOfFile)
             {
-                switch (eofPolicy)
+                if (eofPolicy == EofPolicy.Ignore)
                 {
-                    case EofPolicy.RejectIfPresent:
-                        return false;
-                    case EofPolicy.Ignore:
-                        continue;
-                    case EofPolicy.Require:
-                        if (!MatchesBackward(byteSequence.SubSequences, bytes, ref budget))
-                        {
-                            return false;
-                        }
+                    continue;
+                }
 
-                        break;
+                if (!MatchesBackward(byteSequence.SubSequences, bytes, ref budget))
+                {
+                    return false;
                 }
             }
             else if (!MatchesForward(byteSequence.SubSequences, bytes, ref budget))

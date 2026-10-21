@@ -2,7 +2,7 @@ namespace MimeSpy;
 
 /// <summary>
 /// Configures a <see cref="MimeSpy"/> instance to only ever consider a known subset
-/// of PRONOM's catalog, so every <c>Sniff</c>/<c>Spy</c>/<c>Investigate</c> call on it
+/// of PRONOM's catalog, so every <c>Spy</c>/<c>Investigate</c> call on it
 /// skips the rest of the catalog entirely rather than matching against it and
 /// discarding the result - useful when a caller already knows it only ever ingests,
 /// say, images. The default (no options at all, or an empty <see cref="MimeTypes"/>)

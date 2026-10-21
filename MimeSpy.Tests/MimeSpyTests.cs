@@ -9,15 +9,14 @@ public class MimeSpyTests
     private static readonly byte[] Gif89aHeaderOnly = "GIF89a"u8.ToArray();
 
     // A real, complete WAV file - unlike the EOF-anchored formats above (pdf, zip,
-    // gif), WAV's PRONOM signature is pure BOF, so Sniff/Spy/Investigate all agree
-    // on it. Used by tests that check stream-reading mechanics identically across
-    // all three methods, where the point is the plumbing, not any one method's
-    // EOF-handling contract.
+    // gif), WAV's PRONOM signature is pure BOF, so Spy/Investigate agree on it.
+    // Used by tests that check stream-reading mechanics identically across both
+    // methods, where the point is the plumbing, not either method's EOF-handling
+    // contract.
     private static readonly byte[] WavBytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.wav"));
 
     public static TheoryData<SpanMethod> SpanMethods => new()
     {
-        new SpanMethod("Sniff", (sut, bytes) => sut.Sniff(bytes)),
         new SpanMethod("Spy", (sut, bytes) => sut.Spy(bytes)),
         new SpanMethod("Investigate", (sut, bytes) => sut.Investigate(bytes)),
     };
@@ -61,19 +60,11 @@ public class MimeSpyTests
         Assert.Equal(first, second);
     }
 
-    // The three-tier contract itself (docs/adr/0016, 0017, 0019): Sniff rejects any
-    // signature that needs an EOF check outright, Spy evaluates the same bytes but
-    // skips (rather than rejects) that check, and Investigate requires it against
-    // the buffer's real end - so a merely-partial buffer that happens to satisfy a
-    // format's BOF portion is caught by Spy but not by Sniff or Investigate.
-
-    [Fact]
-    public void Sniff_PdfHeaderWithoutTrailer_ReturnsNoMatch_BecauseOnlyEofAnchoredSignaturesExist()
-    {
-        var result = _sut.Sniff(PdfHeaderOnly);
-
-        Assert.Empty(result);
-    }
+    // The Spy/Investigate contract itself (docs/adr/0017, 0019): Spy evaluates a
+    // signature's BOF portion but skips (rather than requires) its EOF check, while
+    // Investigate requires it against the buffer's real end - so a merely-partial
+    // buffer that happens to satisfy a format's BOF portion is caught by Spy but
+    // not by Investigate.
 
     [Fact]
     public void Spy_PdfHeaderWithoutTrailer_MatchesPdf_BySkippingTheEofCheck()
@@ -95,27 +86,11 @@ public class MimeSpyTests
     }
 
     [Fact]
-    public void Sniff_GenericZipHeaderOnly_ReturnsNoMatch_BecauseEveryZipSignatureNeedsEof()
-    {
-        var result = _sut.Sniff(GenericZipHeaderOnly);
-
-        Assert.Empty(result);
-    }
-
-    [Fact]
     public void Spy_GenericZipHeaderOnly_MatchesZip()
     {
         var result = _sut.Spy(GenericZipHeaderOnly);
 
         Assert.Contains(result, f => f.Extensions.Contains("zip"));
-    }
-
-    [Fact]
-    public void Sniff_Gif89aHeaderOnly_ReturnsNoMatch_BecauseGifIsAlsoEofAnchored()
-    {
-        var result = _sut.Sniff(Gif89aHeaderOnly);
-
-        Assert.Empty(result);
     }
 
     [Fact]
@@ -128,7 +103,6 @@ public class MimeSpyTests
 
     public static TheoryData<StreamMethod> StreamMethods => new()
     {
-        new StreamMethod("Sniff", (sut, stream) => sut.Sniff(stream)),
         new StreamMethod("Spy", (sut, stream) => sut.Spy(stream)),
         new StreamMethod("Investigate", (sut, stream) => sut.Investigate(stream)),
     };
@@ -168,7 +142,6 @@ public class MimeSpyTests
 
     public static TheoryData<AsyncStreamMethod> AsyncStreamMethods => new()
     {
-        new AsyncStreamMethod("SniffAsync", (sut, stream, ct) => sut.SniffAsync(stream, ct)),
         new AsyncStreamMethod("SpyAsync", (sut, stream, ct) => sut.SpyAsync(stream, ct)),
         new AsyncStreamMethod("InvestigateAsync", (sut, stream, ct) => sut.InvestigateAsync(stream, ct)),
     };

@@ -14,15 +14,14 @@ foreach (var result in results)
 }
 ```
 
-MimeSpy identifies formats using [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/), the UK National Archives' file-format signature registry, through three methods that trade how much of the file you can give them for how confirmed the answer is:
+MimeSpy identifies formats using [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/), the UK National Archives' file-format signature registry, through two methods that trade how much of the file you can give them for how confirmed the answer is:
 
-- **`Sniff`** only evaluates signatures anchored to the start of the file. Safe against a partial or streamed-in-pieces buffer - anything it reports is guaranteed to also be reported by `Investigate` against the same file's complete bytes - but it can't report a format whose every PRONOM signature needs to check the file's end (PNG, JPEG, GIF, and plain ZIP among them).
-- **`Spy`** reports everything `Sniff` does, plus formats PRONOM can only fully confirm by a trailer near the end of the file - the practical default for a quick "what kind of file is this" guess from a partial read. Unlike `Sniff`, a match here isn't guaranteed to hold up once the whole file is checked.
+- **`Spy`** is the practical default for a quick "what kind of file is this" guess from a partial read. It evaluates a signature's header (start-of-file) portion and skips any trailer check it would otherwise need - so it also reports formats PRONOM can only fully confirm by a trailer near the end of the file (PNG, JPEG, GIF, and plain ZIP among them). That means a match here isn't guaranteed to hold up once the whole file is checked - a truncated or corrupted file could pass the header check and still fail `Investigate`.
 - **`Investigate`** requires the complete file. It evaluates end-anchored signatures for real, and runs PRONOM's container-signature engine to resolve a generic ZIP/OLE2 match to its specific format (docx vs xlsx vs plain zip, doc vs xls, ...).
 
-A single header can genuinely match more than one format, so callers should expect more than one `Dossier` back from any of these - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md). The three-way split, what each one can and can't see, and why, is covered in [docs/adr/0016](docs/adr/0016-sniff-and-investigate-split-by-what-end-of-file-they-can-see.md), [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md), and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
+A single header can genuinely match more than one format, so callers should expect more than one `Dossier` back from either of these - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md). The split, what each one can and can't see, and why, is covered in [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md) and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
 
-All three take a `ReadOnlySpan<byte>` or a `Stream`, and the `Stream` overloads have async twins (`SniffAsync`/`SpyAsync`/`InvestigateAsync`). There's no async overload of the `ReadOnlySpan<byte>` form - see [docs/adr/0014-async-overload-only-on-the-stream-api.md](docs/adr/0014-async-overload-only-on-the-stream-api.md).
+Both take a `ReadOnlySpan<byte>` or a `Stream`, and the `Stream` overloads have async twins (`SpyAsync`/`InvestigateAsync`). There's no async overload of the `ReadOnlySpan<byte>` form - see [docs/adr/0014-async-overload-only-on-the-stream-api.md](docs/adr/0014-async-overload-only-on-the-stream-api.md).
 
 ### `Spy`'s two overloads aren't the same guess
 

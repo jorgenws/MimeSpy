@@ -47,7 +47,7 @@ internal static class AccuracyReport
         }
     }
 
-    private static string DescribeMimeSpy(IReadOnlyCollection<PronomFormat> matches) =>
+    private static string DescribeMimeSpy(IReadOnlyCollection<Dossier> matches) =>
         matches.Count == 0
             ? "(no match)"
             : string.Join(", ", matches.Select(f => f.MimeType ?? $"({f.Puid}, no mime type)"));

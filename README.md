@@ -6,7 +6,7 @@ A library to detect mime type from file headers.
 
 ```csharp
 var spy = new MimeSpy();
-IReadOnlyList<PronomFormat> results = spy.Spy(bytes);
+IReadOnlyList<Dossier> results = spy.Spy(bytes);
 
 foreach (var result in results)
 {
@@ -20,7 +20,7 @@ MimeSpy identifies formats using [PRONOM](https://www.nationalarchives.gov.uk/PR
 - **`Spy`** reports everything `Sniff` does, plus formats PRONOM can only fully confirm by a trailer near the end of the file - the practical default for a quick "what kind of file is this" guess from a partial read. Unlike `Sniff`, a match here isn't guaranteed to hold up once the whole file is checked.
 - **`Investigate`** requires the complete file. It evaluates end-anchored signatures for real, and runs PRONOM's container-signature engine to resolve a generic ZIP/OLE2 match to its specific format (docx vs xlsx vs plain zip, doc vs xls, ...).
 
-A single header can genuinely match more than one format, so callers should expect more than one `PronomFormat` back from any of these - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md). The three-way split, what each one can and can't see, and why, is covered in [docs/adr/0016](docs/adr/0016-sniff-and-investigate-split-by-what-end-of-file-they-can-see.md), [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md), and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
+A single header can genuinely match more than one format, so callers should expect more than one `Dossier` back from any of these - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md). The three-way split, what each one can and can't see, and why, is covered in [docs/adr/0016](docs/adr/0016-sniff-and-investigate-split-by-what-end-of-file-they-can-see.md), [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md), and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
 
 All three take a `ReadOnlySpan<byte>` or a `Stream`, and the `Stream` overloads have async twins (`SniffAsync`/`SpyAsync`/`InvestigateAsync`). There's no async overload of the `ReadOnlySpan<byte>` form - see [docs/adr/0014-async-overload-only-on-the-stream-api.md](docs/adr/0014-async-overload-only-on-the-stream-api.md).
 
@@ -48,7 +48,7 @@ The default `MimeSpy()` constructor takes no arguments, and a `MimeSpy` instance
 services.AddSingleton<IMimeSpy, MimeSpy>();
 ```
 
-Consumers then take an `IMimeSpy` constructor dependency like any other singleton service. The interface exists purely as a mockable seam for callers whose own flow calls these methods inline rather than taking a pre-computed `PronomFormat` list as input. To register a filtered instance instead, resolve `MimeSpyOptions` through DI or build the singleton yourself:
+Consumers then take an `IMimeSpy` constructor dependency like any other singleton service. The interface exists purely as a mockable seam for callers whose own flow calls these methods inline rather than taking a pre-computed `Dossier` list as input. To register a filtered instance instead, resolve `MimeSpyOptions` through DI or build the singleton yourself:
 
 ```csharp
 services.AddSingleton<IMimeSpy>(new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/"] }));

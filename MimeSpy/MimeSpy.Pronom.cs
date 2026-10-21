@@ -3,6 +3,30 @@ namespace MimeSpy;
 /// <inheritdoc/>
 public sealed partial class MimeSpy : IMimeSpy
 {
+    private readonly PronomFormatFilter? _filter;
+
+    /// <summary>Considers every format PRONOM catalogs.</summary>
+    public MimeSpy()
+    {
+    }
+
+    /// <summary>
+    /// Considers only formats matching <paramref name="options"/> - see
+    /// <see cref="MimeSpyOptions.MimeTypes"/>. Built once here, not per call.
+    /// </summary>
+    public MimeSpy(MimeSpyOptions options)
+    {
+        if (options is null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
+        if (options.MimeTypes.Count > 0)
+        {
+            _filter = PronomFormatFilter.Build(options);
+        }
+    }
+
     // There's no small fixed byte count that reaches every PRONOM signature:
     // most anchors sit in the first few hundred bytes, but a handful probe up
     // to several thousand, and a few (BibTeX-style text formats) up to 15000 -
@@ -14,7 +38,7 @@ public sealed partial class MimeSpy : IMimeSpy
     private const int SniffReadSize = 65536;
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Sniff(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesForward(bytes));
+    public IReadOnlyList<PronomFormat> Sniff(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesForward(bytes, _filter));
 
     /// <inheritdoc/>
     public IReadOnlyList<PronomFormat> Sniff(Stream stream)
@@ -76,7 +100,7 @@ public sealed partial class MimeSpy : IMimeSpy
     private const long SpyFullReadThreshold = 8 * 1024 * 1024;
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes));
+    public IReadOnlyList<PronomFormat> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes, _filter));
 
     /// <inheritdoc/>
     public IReadOnlyList<PronomFormat> Spy(Stream stream)
@@ -260,8 +284,8 @@ public sealed partial class MimeSpy : IMimeSpy
 
     // bytes may be larger than length (see Investigate(Stream)'s own comment) -
     // every reader this reaches is written to respect length rather than bytes.Length.
-    private static IReadOnlyList<PronomFormat> InvestigateCore(byte[] bytes, int length) =>
-        ToPublic(PronomContainerMatcher.Refine(bytes, length, PronomSignatureMatcher.FindMatchesFull(bytes.AsSpan(0, length))));
+    private IReadOnlyList<PronomFormat> InvestigateCore(byte[] bytes, int length) =>
+        ToPublic(PronomContainerMatcher.Refine(bytes, length, PronomSignatureMatcher.FindMatchesFull(bytes.AsSpan(0, length), _filter)));
 
     private static IReadOnlyList<PronomFormat> ToPublic(IReadOnlyList<PronomFileFormat> formats) =>
         formats.Count == 0 ? [] : [.. formats.Select(f => new PronomFormat(f.Puid, f.Name, f.Version, f.MimeType, f.Extensions))];

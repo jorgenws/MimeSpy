@@ -42,7 +42,7 @@ internal static class PronomSignatureMatcher
     /// they're skipped rather than matched against a false EOF. See
     /// <see cref="FindMatchesGuess"/> for a more permissive alternative.
     /// </summary>
-    public static IReadOnlyList<PronomFileFormat> FindMatchesForward(ReadOnlySpan<byte> bytes) => FindMatches(bytes, EofPolicy.RejectIfPresent);
+    public static IReadOnlyList<PronomFileFormat> FindMatchesForward(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, EofPolicy.RejectIfPresent, filter);
 
     /// <summary>
     /// Matches signatures the same way as <see cref="FindMatchesForward"/>, except a
@@ -52,13 +52,13 @@ internal static class PronomSignatureMatcher
     /// <see cref="FindMatchesForward"/>, a match here is not guaranteed to also be
     /// reported by <see cref="FindMatchesFull"/> against the same file's complete bytes.
     /// </summary>
-    public static IReadOnlyList<PronomFileFormat> FindMatchesGuess(ReadOnlySpan<byte> bytes) => FindMatches(bytes, EofPolicy.Ignore);
+    public static IReadOnlyList<PronomFileFormat> FindMatchesGuess(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, EofPolicy.Ignore, filter);
 
     /// <summary>
     /// Matches signatures against <paramref name="bytes"/> as the complete file
     /// content, so end-of-file-anchored sequences can be evaluated against its true end.
     /// </summary>
-    public static IReadOnlyList<PronomFileFormat> FindMatchesFull(ReadOnlySpan<byte> bytes) => FindMatches(bytes, EofPolicy.Require);
+    public static IReadOnlyList<PronomFileFormat> FindMatchesFull(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, EofPolicy.Require, filter);
 
     /// <summary>
     /// Matches a single signature against <paramref name="bytes"/> as complete
@@ -73,18 +73,27 @@ internal static class PronomSignatureMatcher
     // couldn't pin to one required first byte at all (see its own
     // TryGetRequiredFirstByte doc) - those are always tried, so this never excludes
     // a signature that could legitimately match, only ones whose own BOF anchor
-    // proves it can't.
-    private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> bytes, EofPolicy eofPolicy)
+    // proves it can't. filter, when given, swaps both candidate sets for a narrower
+    // pair built from only the signatures its included formats reference (see
+    // PronomFormatFilter) - null (the default, unfiltered MimeSpy()) takes the exact
+    // same path as before filtering existed. Everything past this candidate
+    // selection - Matches() itself, and resolving a matched signature back to its
+    // claiming format(s) - is unaware filtering exists at all.
+    private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> bytes, EofPolicy eofPolicy, PronomFormatFilter? filter)
     {
         List<PronomFileFormat>? matches = null;
         HashSet<int>? matchedFormatIds = null;
 
         if (bytes.Length > 0)
         {
-            TryMatchCandidates(PronomSignatureIndex.FindSignatureIdsByFirstByte(bytes[0]), bytes, eofPolicy, ref matches, ref matchedFormatIds);
+            var candidates = filter is null
+                ? PronomSignatureIndex.FindSignatureIdsByFirstByte(bytes[0])
+                : filter.FindSignatureIdsByFirstByte(bytes[0]);
+            TryMatchCandidates(candidates, bytes, eofPolicy, ref matches, ref matchedFormatIds);
         }
 
-        TryMatchCandidates(PronomSignatureIndex.SignatureIdsWithoutFixedFirstByte, bytes, eofPolicy, ref matches, ref matchedFormatIds);
+        var fallback = filter?.SignatureIdsWithoutFixedFirstByte ?? PronomSignatureIndex.SignatureIdsWithoutFixedFirstByte;
+        TryMatchCandidates(fallback, bytes, eofPolicy, ref matches, ref matchedFormatIds);
 
         return matches ?? (IReadOnlyList<PronomFileFormat>)[];
     }

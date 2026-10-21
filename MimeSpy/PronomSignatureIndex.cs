@@ -24,8 +24,12 @@ internal static class PronomSignatureIndex
     private static readonly Dictionary<string, PronomFileFormat> FormatByPuid;
     private static readonly Dictionary<int, List<PronomFileFormat>> FormatsBySignatureId;
     private static readonly Dictionary<byte, List<int>> SignatureIdsByFirstByte;
+    private static readonly Dictionary<int, byte> RequiredFirstByteBySignatureId;
 
     public static IReadOnlyList<int> SignatureIdsWithoutFixedFirstByte { get; }
+
+    /// <summary>Every cataloged format - <see cref="PronomFormatFilter"/> walks this once, per filtered <see cref="MimeSpy"/> instance, to build its own narrower version of this index's two buckets above.</summary>
+    public static IReadOnlyList<PronomFileFormat> AllFormats { get; }
 
     static PronomSignatureIndex()
     {
@@ -56,6 +60,7 @@ internal static class PronomSignatureIndex
         }
 
         SignaturesById = signaturesById;
+        AllFormats = formats;
 
         var formatByPuid = new Dictionary<string, PronomFileFormat>(StringComparer.Ordinal);
         var formatsBySignatureId = new Dictionary<int, List<PronomFileFormat>>();
@@ -83,6 +88,7 @@ internal static class PronomSignatureIndex
 
         var signatureIdsByFirstByte = new Dictionary<byte, List<int>>();
         var signatureIdsWithoutFixedFirstByte = new List<int>();
+        var requiredFirstByteBySignatureId = new Dictionary<int, byte>();
         foreach (var signature in signaturesById.Values)
         {
             if (TryGetRequiredFirstByte(signature) is byte firstByte)
@@ -94,6 +100,7 @@ internal static class PronomSignatureIndex
                 }
 
                 bucket.Add(signature.Id);
+                requiredFirstByteBySignatureId[signature.Id] = firstByte;
             }
             else
             {
@@ -103,9 +110,19 @@ internal static class PronomSignatureIndex
 
         SignatureIdsByFirstByte = signatureIdsByFirstByte;
         SignatureIdsWithoutFixedFirstByte = signatureIdsWithoutFixedFirstByte;
+        RequiredFirstByteBySignatureId = requiredFirstByteBySignatureId;
     }
 
     public static PronomInternalSignature GetSignature(int id) => SignaturesById[id];
+
+    /// <summary>
+    /// The same required-first-byte fact <see cref="FindSignatureIdsByFirstByte"/>'s
+    /// buckets are built from, looked up by signature ID rather than by byte -
+    /// <see cref="PronomFormatFilter"/> uses this to re-bucket just the signatures its
+    /// included formats reference, without re-deriving the fact from scratch.
+    /// </summary>
+    public static byte? GetRequiredFirstByte(int signatureId) =>
+        RequiredFirstByteBySignatureId.TryGetValue(signatureId, out var firstByte) ? firstByte : null;
 
     public static PronomFileFormat? FindFormatByPuid(string puid) => FormatByPuid.TryGetValue(puid, out var format) ? format : null;
 

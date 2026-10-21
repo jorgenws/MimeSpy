@@ -19,7 +19,7 @@ public sealed class MimeSpyOptions
     /// subtype), the same way <c>"application/pdf"</c> matches that one exactly (no
     /// other cataloged MIME type happens to start with it). Patterns are additive -
     /// <c>["image/", "audio/"]</c> includes a format matching either. A format with
-    /// no MIME type at all (<see cref="PronomFormat.MimeType"/> can be null - not
+    /// no MIME type at all (<see cref="Dossier.MimeType"/> can be null - not
     /// every PRONOM format has one) never matches any pattern here, so is excluded
     /// whenever this list is non-empty.
     /// </summary>

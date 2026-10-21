@@ -38,10 +38,10 @@ public sealed partial class MimeSpy : IMimeSpy
     private const int SniffReadSize = 65536;
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Sniff(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesForward(bytes, _filter));
+    public IReadOnlyList<Dossier> Sniff(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesForward(bytes, _filter));
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Sniff(Stream stream)
+    public IReadOnlyList<Dossier> Sniff(Stream stream)
     {
         if (stream is null)
         {
@@ -68,7 +68,7 @@ public sealed partial class MimeSpy : IMimeSpy
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<PronomFormat>> SniffAsync(Stream stream, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<Dossier>> SniffAsync(Stream stream, CancellationToken cancellationToken = default)
     {
         if (stream is null)
         {
@@ -78,7 +78,7 @@ public sealed partial class MimeSpy : IMimeSpy
         return SniffAsyncCore(stream, cancellationToken);
     }
 
-    private async Task<IReadOnlyList<PronomFormat>> SniffAsyncCore(Stream stream, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<Dossier>> SniffAsyncCore(Stream stream, CancellationToken cancellationToken)
     {
         var startPosition = stream.CanSeek ? stream.Position : -1;
         var buffer = new byte[SniffReadSize];
@@ -100,10 +100,10 @@ public sealed partial class MimeSpy : IMimeSpy
     private const long SpyFullReadThreshold = 8 * 1024 * 1024;
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes, _filter));
+    public IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes, _filter));
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Spy(Stream stream)
+    public IReadOnlyList<Dossier> Spy(Stream stream)
     {
         if (stream is null)
         {
@@ -137,7 +137,7 @@ public sealed partial class MimeSpy : IMimeSpy
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<PronomFormat>> SpyAsync(Stream stream, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<Dossier>> SpyAsync(Stream stream, CancellationToken cancellationToken = default)
     {
         if (stream is null)
         {
@@ -147,14 +147,14 @@ public sealed partial class MimeSpy : IMimeSpy
         return SpyAsyncCore(stream, cancellationToken);
     }
 
-    private Task<IReadOnlyList<PronomFormat>> SpyAsyncCore(Stream stream, CancellationToken cancellationToken)
+    private Task<IReadOnlyList<Dossier>> SpyAsyncCore(Stream stream, CancellationToken cancellationToken)
     {
         return TryGetRemainingLength(stream, out var remaining) && remaining <= SpyFullReadThreshold
             ? InvestigateAsyncCore(stream, cancellationToken)
             : SpyBoundedPeekAsync(stream, cancellationToken);
     }
 
-    private async Task<IReadOnlyList<PronomFormat>> SpyBoundedPeekAsync(Stream stream, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<Dossier>> SpyBoundedPeekAsync(Stream stream, CancellationToken cancellationToken)
     {
         var startPosition = stream.CanSeek ? stream.Position : -1;
         var buffer = new byte[SniffReadSize];
@@ -217,7 +217,7 @@ public sealed partial class MimeSpy : IMimeSpy
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Investigate(ReadOnlySpan<byte> bytes)
+    public IReadOnlyList<Dossier> Investigate(ReadOnlySpan<byte> bytes)
     {
         // Unlike the Stream overloads (which already hold an array and can hand it
         // to InvestigateCore untouched - see their own comments), a caller-supplied
@@ -228,7 +228,7 @@ public sealed partial class MimeSpy : IMimeSpy
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<PronomFormat> Investigate(Stream stream)
+    public IReadOnlyList<Dossier> Investigate(Stream stream)
     {
         if (stream is null)
         {
@@ -254,7 +254,7 @@ public sealed partial class MimeSpy : IMimeSpy
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<PronomFormat>> InvestigateAsync(Stream stream, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<Dossier>> InvestigateAsync(Stream stream, CancellationToken cancellationToken = default)
     {
         if (stream is null)
         {
@@ -264,7 +264,7 @@ public sealed partial class MimeSpy : IMimeSpy
         return InvestigateAsyncCore(stream, cancellationToken);
     }
 
-    private async Task<IReadOnlyList<PronomFormat>> InvestigateAsyncCore(Stream stream, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<Dossier>> InvestigateAsyncCore(Stream stream, CancellationToken cancellationToken)
     {
         var startPosition = stream.CanSeek ? stream.Position : -1;
         using var buffer = new MemoryStream();
@@ -284,21 +284,21 @@ public sealed partial class MimeSpy : IMimeSpy
 
     // bytes may be larger than length (see Investigate(Stream)'s own comment) -
     // every reader this reaches is written to respect length rather than bytes.Length.
-    private IReadOnlyList<PronomFormat> InvestigateCore(byte[] bytes, int length) =>
+    private IReadOnlyList<Dossier> InvestigateCore(byte[] bytes, int length) =>
         ToPublic(PronomContainerMatcher.Refine(bytes, length, PronomSignatureMatcher.FindMatchesFull(bytes.AsSpan(0, length), _filter)));
 
-    private static IReadOnlyList<PronomFormat> ToPublic(IReadOnlyList<PronomFileFormat> formats) =>
-        formats.Count == 0 ? [] : [.. formats.Select(f => new PronomFormat(f.Puid, f.Name, f.Version, f.MimeType, f.Extensions))];
+    private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomFileFormat> formats) =>
+        formats.Count == 0 ? [] : [.. formats.Select(f => new Dossier(f.Puid, f.Name, f.Version, f.MimeType, f.Extensions))];
 }
 
 /// <summary>
-/// A PRONOM file format that matched, from <see cref="MimeSpy.Sniff(ReadOnlySpan{byte})"/>,
-/// <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/>, or <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/>
-/// (and their overloads).
+/// Everything PRONOM knows about one format that matched, from
+/// <see cref="MimeSpy.Sniff(ReadOnlySpan{byte})"/>, <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/>,
+/// or <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/> (and their overloads).
 /// </summary>
 /// <param name="Puid">The PRONOM Unique Identifier (e.g. <c>"fmt/412"</c>, <c>"x-fmt/263"</c>) - PRONOM's own stable format key.</param>
 /// <param name="Name">The format's name, as PRONOM records it (e.g. <c>"Microsoft Word for Windows"</c>).</param>
 /// <param name="Version">The format's version, if PRONOM records one for this PUID specifically (distinct PUIDs usually exist per version instead).</param>
 /// <param name="MimeType">The MIME type PRONOM associates with this format, if any - not every PRONOM format has one.</param>
 /// <param name="Extensions">File extensions associated with this format.</param>
-public sealed record PronomFormat(string Puid, string Name, string? Version, string? MimeType, IReadOnlyList<string> Extensions);
+public sealed record Dossier(string Puid, string Name, string? Version, string? MimeType, IReadOnlyList<string> Extensions);

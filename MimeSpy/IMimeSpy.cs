@@ -5,7 +5,7 @@ namespace MimeSpy;
 /// Implemented by <see cref="MimeSpy"/>, which has no constructor arguments and no
 /// mutable state - register it as a singleton against this interface for callers that
 /// want a mockable seam (e.g. flow code that calls these methods inline rather than
-/// taking a pre-computed <see cref="PronomFormat"/> list as input).
+/// taking a pre-computed <see cref="Dossier"/> list as input).
 /// </summary>
 public interface IMimeSpy
 {
@@ -26,7 +26,7 @@ public interface IMimeSpy
     /// byte to (rarely) tens of thousands of bytes in, so there's no small fixed
     /// count that reaches all of them.
     /// </param>
-    IReadOnlyList<PronomFormat> Sniff(ReadOnlySpan<byte> bytes);
+    IReadOnlyList<Dossier> Sniff(ReadOnlySpan<byte> bytes);
 
     /// <summary>
     /// Identifies the PRONOM format(s) matching the leading bytes of <paramref name="stream"/>.
@@ -37,14 +37,14 @@ public interface IMimeSpy
     /// peek rather than a consume; on a non-seekable stream the read bytes are gone
     /// from it.
     /// </param>
-    IReadOnlyList<PronomFormat> Sniff(Stream stream);
+    IReadOnlyList<Dossier> Sniff(Stream stream);
 
     /// <summary>
     /// Asynchronously identifies the PRONOM format(s) matching the leading bytes of <paramref name="stream"/>.
     /// </summary>
     /// <param name="stream">Read the same way, and for the same reason, as <see cref="Sniff(Stream)"/> - see that overload's own doc.</param>
     /// <param name="cancellationToken">Cancels the pending read from <paramref name="stream"/>.</param>
-    Task<IReadOnlyList<PronomFormat>> SniffAsync(Stream stream, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Dossier>> SniffAsync(Stream stream, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Identifies the PRONOM format(s) whose header matches the leading bytes of a
@@ -70,7 +70,7 @@ public interface IMimeSpy
     /// already knows that, and should call <see cref="Investigate(ReadOnlySpan{byte})"/>
     /// directly rather than have this method try to infer it.
     /// </param>
-    IReadOnlyList<PronomFormat> Spy(ReadOnlySpan<byte> bytes);
+    IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes);
 
     /// <summary>
     /// Identifies the PRONOM format(s) whose header matches the leading bytes of
@@ -90,14 +90,14 @@ public interface IMimeSpy
     /// its position is restored afterwards, so this is a peek rather than a
     /// consume; on a non-seekable stream the read bytes are gone from it.
     /// </param>
-    IReadOnlyList<PronomFormat> Spy(Stream stream);
+    IReadOnlyList<Dossier> Spy(Stream stream);
 
     /// <summary>
     /// Asynchronously identifies the PRONOM format(s) whose header matches the leading bytes of <paramref name="stream"/>.
     /// </summary>
     /// <param name="stream">Read the same way, and for the same reason, as <see cref="Spy(Stream)"/> - see that overload's own doc.</param>
     /// <param name="cancellationToken">Cancels the pending read from <paramref name="stream"/>.</param>
-    Task<IReadOnlyList<PronomFormat>> SpyAsync(Stream stream, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Dossier>> SpyAsync(Stream stream, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Identifies the PRONOM format(s) matching a complete file, including - unlike
@@ -127,7 +127,7 @@ public interface IMimeSpy
     /// concurrent load, latency budget) - can treat "peak memory here" as
     /// approximately equal to the file's own size.
     /// </param>
-    IReadOnlyList<PronomFormat> Investigate(ReadOnlySpan<byte> bytes);
+    IReadOnlyList<Dossier> Investigate(ReadOnlySpan<byte> bytes);
 
     /// <summary>
     /// Identifies the PRONOM format(s) matching the complete content of <paramref name="stream"/>.
@@ -140,12 +140,12 @@ public interface IMimeSpy
     /// is seekable, its position is restored afterwards, so this is a peek rather
     /// than a consume; on a non-seekable stream the read bytes are gone from it.
     /// </param>
-    IReadOnlyList<PronomFormat> Investigate(Stream stream);
+    IReadOnlyList<Dossier> Investigate(Stream stream);
 
     /// <summary>
     /// Asynchronously identifies the PRONOM format(s) matching the complete content of <paramref name="stream"/>.
     /// </summary>
     /// <param name="stream">Read the same way, and for the same reason, as <see cref="Investigate(Stream)"/> - see that overload's own doc.</param>
     /// <param name="cancellationToken">Cancels the pending read from <paramref name="stream"/>.</param>
-    Task<IReadOnlyList<PronomFormat>> InvestigateAsync(Stream stream, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Dossier>> InvestigateAsync(Stream stream, CancellationToken cancellationToken = default);
 }

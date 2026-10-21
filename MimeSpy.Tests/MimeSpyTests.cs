@@ -234,17 +234,17 @@ public class MimeSpyTests
             viaSpyStream.Select(f => f.Puid).OrderBy(p => p));
     }
 
-    public sealed record SpanMethod(string Name, Func<MimeSpy, ReadOnlySpan<byte>, IReadOnlyList<PronomFormat>> Invoke)
+    public sealed record SpanMethod(string Name, Func<MimeSpy, ReadOnlySpan<byte>, IReadOnlyList<Dossier>> Invoke)
     {
         public override string ToString() => Name;
     }
 
-    public sealed record StreamMethod(string Name, Func<MimeSpy, Stream, IReadOnlyList<PronomFormat>> Invoke)
+    public sealed record StreamMethod(string Name, Func<MimeSpy, Stream, IReadOnlyList<Dossier>> Invoke)
     {
         public override string ToString() => Name;
     }
 
-    public sealed record AsyncStreamMethod(string Name, Func<MimeSpy, Stream, CancellationToken, Task<IReadOnlyList<PronomFormat>>> Invoke)
+    public sealed record AsyncStreamMethod(string Name, Func<MimeSpy, Stream, CancellationToken, Task<IReadOnlyList<Dossier>>> Invoke)
     {
         public override string ToString() => Name;
     }

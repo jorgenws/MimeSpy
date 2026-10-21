@@ -2,4 +2,5 @@
   <Project Path="MimeSpy/MimeSpy.csproj" />
   <Project Path="MimeSpy.Tests/MimeSpy.Tests.csproj" />
   <Project Path="MimeSpy.IntegrationTests/MimeSpy.IntegrationTests.csproj" />
+  <Project Path="MimeSpy.Benchmarks/MimeSpy.Benchmarks.csproj" />
 </Solution>

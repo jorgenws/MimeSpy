@@ -1,8 +1,8 @@
 # MimeSpy.IntegrationTests
 
-Runs `MimeSpy.Spy()` against real files - one per format - in `Fixtures/`, as opposed to
-`MimeSpy.Tests`, which is mostly hand-built byte arrays plus a handful of samples of its
-own.
+Runs `MimeSpy.Investigate()` against real files - one per format - in `Fixtures/`, as
+opposed to `MimeSpy.Tests`, which is mostly hand-built byte arrays plus a handful of
+samples of its own.
 
 ## Fixtures
 

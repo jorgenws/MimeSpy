@@ -39,7 +39,7 @@ If you already know you'll only ever hand MimeSpy one broad category of file - s
 var spy = new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/", "audio/"] });
 ```
 
-`MimeTypes` patterns are matched by case-insensitive starting-with against each format's MIME types - `"image/"` catches every image subtype, `"application/pdf"` catches that one exactly - and are additive: a format is included if any of its types matches *any* pattern. The default (no options at all, or an empty `MimeTypes` list) considers every cataloged format, identical to `new MimeSpy()`. The narrowed index is built once, at construction, not per call.
+`MimeTypes` patterns are a plain, case-insensitive starts-with against each format's MIME types, so any prefix works - `"image/"` catches every image subtype, `"image/j"` catches every one starting that way, such as `image/jpeg` and `image/jxl`. A full type also catches longer types that start with it: `"font/woff"` includes `font/woff2`, and `"application/vnd.ms-excel"` includes the macro-enabled Excel types. Patterns are additive: a format is included if any of its types matches *any* pattern. The default (no options at all, or an empty `MimeTypes` list) considers every cataloged format, identical to `new MimeSpy()`. The narrowed index is built once, at construction, not per call.
 
 `ExcludedMimeTypes` takes patterns the same way and leaves out every format with a type matching one, even if `MimeTypes` includes it. Combined, they say exactly which answers you want - for example every image format except DNG, so a DNG file reports as the TIFF it's built on rather than as DNG:
 

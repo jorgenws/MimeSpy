@@ -9,7 +9,10 @@ own table resolved to, filtered or not.
 
 **Decision:**
 
-- `ExcludedMimeTypes` takes prefix patterns like `MimeTypes`, and wins over it. A format
+- `ExcludedMimeTypes` takes patterns like `MimeTypes` - a plain, case-insensitive
+  starts-with, kept deliberately: any prefix works (`"image/j"`), at the cost that a full
+  type also matches longer ones (`"font/woff"` matches `font/woff2`). It wins over
+  `MimeTypes`. A format
   is left out if *any* of its types matches, so `"image/dng"` removes DNG, which lists
   both `image/dng` and `image/tiff`.
 - The filter now also removes disallowed formats from results - as signatures match, and

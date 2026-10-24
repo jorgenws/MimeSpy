@@ -34,9 +34,17 @@ Reuses `MimeSpy.IntegrationTests/Fixtures` rather than its own copies.
 dotnet run --project MimeSpy.Benchmarks -c Release
 ```
 
-Runs the BenchmarkDotNet suite (`DetectionBenchmarks`) across a handful of fixtures
-spanning tiny/large files and plain/container formats. Results land under
-`BenchmarkDotNet.Artifacts/results/` (git-ignored).
+Runs the BenchmarkDotNet suite across a handful of fixtures spanning tiny/large files
+and plain/container formats. Results land under `BenchmarkDotNet.Artifacts/results/`
+(git-ignored). Pick one class with `--filter`, e.g. `-- --filter '*StreamBenchmarks*'`:
+
+- `DetectionBenchmarks` - MimeSpy's `Investigate`/`Spy` on in-memory bytes, against
+  Mime-Detective.
+- `FilterBenchmarks` - an unfiltered `MimeSpy` against one scoped with `MimeSpyOptions`.
+- `StreamBenchmarks` - `Investigate(Stream)` on a real `FileStream`, against reading the
+  whole file into memory first. Includes 50 MB variants of the pdf/docx/doc fixtures
+  (generated into the temp folder at setup, deleted afterwards) to exercise the windowed
+  path from docs/adr/0022 - watch the Allocated column there.
 
 ```
 dotnet run --project MimeSpy.Benchmarks -c Release -- accuracy

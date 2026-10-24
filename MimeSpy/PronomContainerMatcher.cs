@@ -10,17 +10,16 @@ namespace MimeSpy;
 /// </summary>
 internal static class PronomContainerMatcher
 {
-    /// <param name="bytes">
-    /// The complete file's bytes - both readers need it (ZIP's central directory
-    /// lives at the end; OLE2 entries can be anywhere), so this can never work from
-    /// a leading-prefix buffer the way the core forward-only match can. Never
-    /// copied: <paramref name="bytes"/> may be larger than <paramref name="length"/>
-    /// (e.g. a growable buffer's backing array) - every reader here is bounds-checked
-    /// against <paramref name="length"/> instead of trusting <c>bytes.Length</c>.
+    /// <param name="file">
+    /// The complete file, seekable, with position 0 at its first byte - both readers
+    /// need random access to all of it (ZIP's central directory lives at the end;
+    /// OLE2 entries can be anywhere), so this can never work from a leading-prefix
+    /// buffer the way the core match can. Read in place: only the structures and
+    /// entries the readers actually need are read, never the whole file. Its
+    /// position is left wherever the readers last moved it.
     /// </param>
-    /// <param name="length">The number of leading bytes of <paramref name="bytes"/> that are actually the file.</param>
     /// <param name="coreMatches">The file's matches from <see cref="PronomSignatureMatcher.FindMatchesFull"/>.</param>
-    public static IReadOnlyList<PronomFileFormat> Refine(byte[] bytes, int length, IReadOnlyList<PronomFileFormat> coreMatches)
+    public static IReadOnlyList<PronomFileFormat> Refine(Stream file, IReadOnlyList<PronomFileFormat> coreMatches)
     {
         string? containerType = null;
         foreach (var format in coreMatches)
@@ -37,7 +36,7 @@ internal static class PronomContainerMatcher
             return coreMatches;
         }
 
-        var puids = containerType == "ZIP" ? MatchZip(bytes, length) : MatchOle2(bytes, length);
+        var puids = containerType == "ZIP" ? MatchZip(file) : MatchOle2(file);
         if (puids.Count == 0)
         {
             return coreMatches;
@@ -59,15 +58,15 @@ internal static class PronomContainerMatcher
         return formats.Count > 0 ? formats : coreMatches;
     }
 
-    private static IReadOnlyList<string> MatchZip(byte[] bytes, int length)
+    private static IReadOnlyList<string> MatchZip(Stream file)
     {
-        using var reader = PronomZipContainerReader.TryOpen(bytes, length);
+        using var reader = PronomZipContainerReader.TryOpen(file);
         return reader is null ? [] : MatchSignatures("ZIP", reader.TryReadEntry);
     }
 
-    private static IReadOnlyList<string> MatchOle2(byte[] bytes, int length)
+    private static IReadOnlyList<string> MatchOle2(Stream file)
     {
-        var reader = PronomOle2ContainerReader.TryOpen(bytes, length);
+        var reader = PronomOle2ContainerReader.TryOpen(file);
         return reader is null ? [] : MatchSignatures("OLE2", reader.TryReadStream);
     }
 

@@ -43,39 +43,33 @@ public sealed partial class MimeSpy : IMimeSpy
     // gigabytes.
     private const long SpyFullReadThreshold = 8 * 1024 * 1024;
 
+    // How much of each end of a Stream Investigate reads for the core signature match
+    // - see docs/adr/0022. A stream no longer than twice this is read whole instead
+    // (the two windows would overlap anyway). Every bounded PRONOM signature reaches
+    // well under 1% of this from its end of the file; only unbounded gaps can reach
+    // further, and those get cut off here rather than searching the whole file.
+    private const int InvestigateWindowSize = 8 * 1024 * 1024;
+
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes, _filter));
 
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Spy(Stream stream)
     {
-        if (stream is null)
-        {
-            throw new ArgumentNullException(nameof(stream));
-        }
+        ThrowIfNullOrNotAtStart(stream);
 
         // If the stream can tell us up front that it's small, read it all and get
         // Investigate's fully-confirmed answer (real EOF check, container engine)
         // instead of the peek-and-skip-EOF fallback below - see docs/adr/0019 for
         // why this is gated on a fact we already have (the stream's own reported
         // length), not on trying Investigate and detecting whether it "worked".
-        if (TryGetRemainingLength(stream, out var remaining) && remaining <= SpyFullReadThreshold)
+        if (CanPromoteToInvestigate(stream))
         {
             return Investigate(stream);
         }
 
-        var startPosition = stream.CanSeek ? stream.Position : -1;
         var array = new byte[SpyPeekReadSize];
-#if NETSTANDARD2_0
-        var totalRead = ReadAtLeast(stream, array);
-#else
-        var totalRead = stream.ReadAtLeast(array.AsSpan(), array.Length, throwOnEndOfStream: false);
-#endif
-
-        if (startPosition >= 0)
-        {
-            stream.Position = startPosition;
-        }
+        var totalRead = StreamReading.Fill(stream, array, 0, array.Length);
 
         return Spy(array.AsSpan(0, totalRead));
     }
@@ -83,153 +77,138 @@ public sealed partial class MimeSpy : IMimeSpy
     /// <inheritdoc/>
     public Task<IReadOnlyList<Dossier>> SpyAsync(Stream stream, CancellationToken cancellationToken = default)
     {
-        if (stream is null)
-        {
-            throw new ArgumentNullException(nameof(stream));
-        }
-
+        ThrowIfNullOrNotAtStart(stream);
         return SpyAsyncCore(stream, cancellationToken);
     }
 
     private Task<IReadOnlyList<Dossier>> SpyAsyncCore(Stream stream, CancellationToken cancellationToken)
     {
-        return TryGetRemainingLength(stream, out var remaining) && remaining <= SpyFullReadThreshold
+        return CanPromoteToInvestigate(stream)
             ? InvestigateAsyncCore(stream, cancellationToken)
             : SpyBoundedPeekAsync(stream, cancellationToken);
     }
 
     private async Task<IReadOnlyList<Dossier>> SpyBoundedPeekAsync(Stream stream, CancellationToken cancellationToken)
     {
-        var startPosition = stream.CanSeek ? stream.Position : -1;
         var buffer = new byte[SpyPeekReadSize];
-        var totalRead = await ReadAtLeastAsync(stream, buffer, cancellationToken).ConfigureAwait(false);
-
-        if (startPosition >= 0)
-        {
-            stream.Position = startPosition;
-        }
+        var totalRead = await StreamReading.FillAsync(stream, buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
 
         return Spy(buffer.AsSpan(0, totalRead));
     }
 
-    private static bool TryGetRemainingLength(Stream stream, out long remaining)
-    {
-        if (stream.CanSeek)
-        {
-            remaining = stream.Length - stream.Position;
-            return true;
-        }
-
-        remaining = 0;
-        return false;
-    }
-
-#if NETSTANDARD2_0
-    private static int ReadAtLeast(Stream stream, byte[] buffer)
-    {
-        var totalRead = 0;
-        while (totalRead < buffer.Length)
-        {
-            var read = stream.Read(buffer, totalRead, buffer.Length - totalRead);
-            if (read == 0)
-            {
-                break;
-            }
-
-            totalRead += read;
-        }
-
-        return totalRead;
-    }
-#endif
-
-    private static async Task<int> ReadAtLeastAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
-    {
-        var totalRead = 0;
-        while (totalRead < buffer.Length)
-        {
-            var read = await stream.ReadAsync(buffer, totalRead, buffer.Length - totalRead, cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                break;
-            }
-
-            totalRead += read;
-        }
-
-        return totalRead;
-    }
+    private static bool CanPromoteToInvestigate(Stream stream) =>
+        stream.CanSeek && stream.Length <= SpyFullReadThreshold;
 
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Investigate(ReadOnlySpan<byte> bytes)
     {
-        // Unlike the Stream overloads (which already hold an array and can hand it
-        // to InvestigateCore untouched - see their own comments), a caller-supplied
-        // span isn't necessarily backed by an array this method can keep past the
-        // call, so this copy is the one truly unavoidable one.
+        // A caller-supplied span isn't necessarily backed by an array this method
+        // can keep past the call (or wrap in a Stream for the container readers), so
+        // this copy is the one truly unavoidable one.
         var array = bytes.ToArray();
-        return InvestigateCore(array, array.Length);
+        return InvestigateInMemory(array, array.Length);
     }
 
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Investigate(Stream stream)
     {
-        if (stream is null)
+        ThrowIfNotInvestigable(stream);
+
+        var length = stream.Length;
+        if (length <= 2L * InvestigateWindowSize)
         {
-            throw new ArgumentNullException(nameof(stream));
+            var whole = new byte[length];
+            return InvestigateInMemory(whole, StreamReading.Fill(stream, whole, 0, whole.Length));
         }
 
-        var startPosition = stream.CanSeek ? stream.Position : -1;
-        using var buffer = new MemoryStream();
-        stream.CopyTo(buffer);
+        var head = new byte[InvestigateWindowSize];
+        var headRead = StreamReading.Fill(stream, head, 0, head.Length);
 
-        if (startPosition >= 0)
-        {
-            stream.Position = startPosition;
-        }
+        var tail = new byte[InvestigateWindowSize];
+        stream.Position = length - tail.Length;
+        var tailRead = StreamReading.Fill(stream, tail, 0, tail.Length);
 
-        // GetBuffer(), not ToArray(): the MemoryStream's own backing array is reused
-        // directly - it's usually larger than buffer.Length (it grows by doubling),
-        // so every reader downstream is bounds-checked against the length passed
-        // alongside it, never against the array's own (possibly larger) Length. This
-        // is what makes a large file's peak memory here ~1x its size instead of the
-        // 2-3x an extra ToArray()/per-reader copy would cost.
-        return InvestigateCore(buffer.GetBuffer(), (int)buffer.Length);
+        return InvestigateCore(head.AsSpan(0, headRead), tail.AsSpan(0, tailRead), stream);
     }
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Dossier>> InvestigateAsync(Stream stream, CancellationToken cancellationToken = default)
     {
+        ThrowIfNotInvestigable(stream);
+        return InvestigateAsyncCore(stream, cancellationToken);
+    }
+
+    // Only the window reads are async. A ZIP/OLE2 file larger than both windows is
+    // then refined by reading the live stream synchronously - ZipArchive has no async
+    // open on netstandard2.0, and the OLE2 reader is sync throughout.
+    private async Task<IReadOnlyList<Dossier>> InvestigateAsyncCore(Stream stream, CancellationToken cancellationToken)
+    {
+        var length = stream.Length;
+        if (length <= 2L * InvestigateWindowSize)
+        {
+            var whole = new byte[length];
+            var read = await StreamReading.FillAsync(stream, whole, 0, whole.Length, cancellationToken).ConfigureAwait(false);
+            return InvestigateInMemory(whole, read);
+        }
+
+        var head = new byte[InvestigateWindowSize];
+        var headRead = await StreamReading.FillAsync(stream, head, 0, head.Length, cancellationToken).ConfigureAwait(false);
+
+        var tail = new byte[InvestigateWindowSize];
+        stream.Position = length - tail.Length;
+        var tailRead = await StreamReading.FillAsync(stream, tail, 0, tail.Length, cancellationToken).ConfigureAwait(false);
+
+        return InvestigateCore(head.AsSpan(0, headRead), tail.AsSpan(0, tailRead), stream);
+    }
+
+    // Seeking is what lets Investigate read just the two ends of a large file, and
+    // hand the container readers random access to the rest, instead of buffering the
+    // whole thing - see docs/adr/0022.
+    private static void ThrowIfNotInvestigable(Stream stream)
+    {
+        ThrowIfNullOrNotAtStart(stream);
+
+        if (!stream.CanSeek)
+        {
+            throw new ArgumentException(
+                "Investigate needs a seekable stream. Copy a non-seekable source into a MemoryStream or a temporary FileStream first, or pass its bytes to Investigate(ReadOnlySpan<byte>).",
+                nameof(stream));
+        }
+    }
+
+    // The whole stream is the file. A seekable stream somewhere other than 0 has
+    // almost always been read from already and not rewound (e.g. a MemoryStream just
+    // written to, left at its end) - reading on from there would silently inspect the
+    // wrong bytes, so it's rejected instead. A non-seekable stream has no position to
+    // check, and is read from wherever it is. See docs/adr/0022.
+    private static void ThrowIfNullOrNotAtStart(Stream stream)
+    {
         if (stream is null)
         {
             throw new ArgumentNullException(nameof(stream));
         }
 
-        return InvestigateAsyncCore(stream, cancellationToken);
-    }
-
-    private async Task<IReadOnlyList<Dossier>> InvestigateAsyncCore(Stream stream, CancellationToken cancellationToken)
-    {
-        var startPosition = stream.CanSeek ? stream.Position : -1;
-        using var buffer = new MemoryStream();
-
-        // netstandard2.0's Stream.CopyToAsync has no (Stream, CancellationToken)
-        // overload without also naming a buffer size - 81920 matches the default the
-        // newer overload uses internally.
-        await stream.CopyToAsync(buffer, 81920, cancellationToken).ConfigureAwait(false);
-
-        if (startPosition >= 0)
+        if (stream.CanSeek && stream.Position != 0)
         {
-            stream.Position = startPosition;
+            throw new ArgumentException(
+                $"The stream is read as the whole file, so a seekable stream must be at position 0, but it was at {stream.Position}. Set stream.Position = 0 first.",
+                nameof(stream));
         }
-
-        return InvestigateCore(buffer.GetBuffer(), (int)buffer.Length);
     }
 
-    // bytes may be larger than length (see Investigate(Stream)'s own comment) -
-    // every reader this reaches is written to respect length rather than bytes.Length.
-    private IReadOnlyList<Dossier> InvestigateCore(byte[] bytes, int length) =>
-        ToPublic(PronomContainerMatcher.Refine(bytes, length, PronomSignatureMatcher.FindMatchesFull(bytes.AsSpan(0, length), _filter)));
+    // The whole file is in bytes[..length]: both ends of it are right there, and the
+    // container readers read it through a no-copy MemoryStream wrapper.
+    private IReadOnlyList<Dossier> InvestigateInMemory(byte[] bytes, int length)
+    {
+        using var file = new MemoryStream(bytes, 0, length, writable: false);
+        var span = bytes.AsSpan(0, length);
+        return InvestigateCore(span, span, file);
+    }
+
+    // head/tail are the file's two ends (the same span when it's all in memory);
+    // file is the whole file, from position 0, for the container readers.
+    private IReadOnlyList<Dossier> InvestigateCore(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, Stream file) =>
+        ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindMatchesFull(head, tail, _filter)));
 
     private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomFileFormat> formats) =>
         formats.Count == 0 ? [] : [.. formats.Select(f => new Dossier(f.Puid, f.Name, f.Version, f.MimeType, f.Extensions))];

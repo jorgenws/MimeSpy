@@ -1,27 +1,33 @@
 namespace MimeSpy;
 
 /// <summary>
-/// Configures a <see cref="MimeSpy"/> instance to only ever consider a known subset
-/// of PRONOM's catalog, so every <c>Spy</c>/<c>Investigate</c> call on it
-/// skips the rest of the catalog entirely rather than matching against it and
-/// discarding the result - useful when a caller already knows it only ever ingests,
-/// say, images. The default (no options at all, or an empty <see cref="MimeTypes"/>)
-/// considers every cataloged format, identical to a <see cref="MimeSpy"/> built with
-/// no options.
+/// Restricts a <see cref="MimeSpy"/> instance to part of PRONOM's catalog. The other formats
+/// are skipped entirely - never returned, and never able to outrank one that is - which
+/// also makes each call faster.
 /// </summary>
+/// <example>
+/// Every image format except DNG, so a DNG file reports as the TIFF it's built on:
+/// <code>new MimeSpyOptions { MimeTypes = ["image/"], ExcludedMimeTypes = ["image/dng"] }</code>
+/// </example>
 public sealed class MimeSpyOptions
 {
     /// <summary>
-    /// MIME type patterns a format's own MIME type must start with (case-insensitive)
-    /// at least one of, to be considered. There's no separate wildcard syntax - a
-    /// whole top-level type is just the pattern it's a prefix of, e.g.
-    /// <c>"image/"</c> matches any MIME type starting with that (every image
-    /// subtype), the same way <c>"application/pdf"</c> matches that one exactly (no
-    /// other cataloged MIME type happens to start with it). Patterns are additive -
-    /// <c>["image/", "audio/"]</c> includes a format matching either. A format with
-    /// no MIME type at all (<see cref="Dossier.MimeType"/> can be null - not
-    /// every PRONOM format has one) never matches any pattern here, so is excluded
-    /// whenever this list is non-empty.
+    /// Strings a format's MIME type must start with to be considered - a plain,
+    /// case-insensitive starts-with, so any prefix works: <c>"image/"</c> covers every image
+    /// type, <c>"image/j"</c> every one starting that way, such as <c>image/jpeg</c> and <c>image/jxl</c>.
+    /// A full type also covers longer types that start with it: <c>"font/woff"</c> includes
+    /// <c>font/woff2</c>. A format is considered if any of its <see cref="Dossier.MimeTypes"/>
+    /// starts with any of them. Formats with no MIME type are excluded whenever this list is
+    /// non-empty. Empty (the default) considers every format.
     /// </summary>
     public IReadOnlyList<string> MimeTypes { get; init; } = [];
+
+    /// <summary>
+    /// Strings to leave out, matched the same way as <see cref="MimeTypes"/>. A
+    /// format is left out if any of its <see cref="Dossier.MimeTypes"/> starts with any of
+    /// them, even if it also matches <see cref="MimeTypes"/>. DNG, for example, lists both
+    /// <c>image/dng</c> and <c>image/tiff</c>, so <c>"image/dng"</c> excludes it while
+    /// <c>"image/tiff"</c> excludes both DNG and TIFF.
+    /// </summary>
+    public IReadOnlyList<string> ExcludedMimeTypes { get; init; } = [];
 }

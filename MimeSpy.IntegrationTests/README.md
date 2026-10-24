@@ -32,8 +32,7 @@ normalization, no diffing).
 Tika is an independent, unrelated Apache project that maintains a large collection of
 real-world sample files (Office documents, PDFs, archives, ...) to test its own format
 detection and parsing - exactly the kind of independently-produced file this project
-needs, and already a source this repo cites for the ASF/WMA/WMV codec markers (see the
-root [README](../README.md)). Each fixture below was fetched once (via the GitHub API's
+needs. Each fixture below was fetched once (via the GitHub API's
 `download_url`, from `apache/tika`'s `main` branch) and is committed here as-is:
 
 | Fixture | Tika path |
@@ -54,55 +53,12 @@ root [README](../README.md)). Each fixture below was fetched once (via the GitHu
 (`...` is `tika-parsers-standard/tika-parsers-standard-modules`, elided for width - the
 full path is in each file's git history / the fetch script used at the time.)
 
-Several of these turned out to be more useful for being real than a hand-built file ever
-could be:
-
-- `sample.docx`'s first zip entry is a `_rels/` directory placeholder, and `sample.jar`'s
-  is a `META-INF/` directory placeholder - neither is the file `ZipContainerSniffer` looks
-  for (`[Content_Types].xml`, `META-INF/MANIFEST.MF`). Real writers commonly emit these;
-  a hand-built fixture never would have. `ZipContainerSniffer` was fixed to skip past a
-  leading zero-length directory entry before checking the name (docs/adr/0009) -
-  `sample.jar` now narrows correctly, `sample.docx` still doesn't (its next entry,
-  `_rels/.rels`, is a real file that isn't `[Content_Types].xml` either - the fix only
-  walks past placeholders, it doesn't hunt through the archive). `RealSampleFileTests`
-  documents both outcomes explicitly.
-- `sample.ods`/`sample.odp`'s stored `mimetype` entries surfaced that
-  `ZipContainerSniffer` always answered `"odt"` for ODF content regardless of what the
-  entry actually said, that `ods`/`ots`/`otp` had no signature-table entry at all, and
-  that even `odt`/`odp` were tied together in one upstream row despite being unrelated
-  formats - all fixed in docs/adr/0010 (a `file_signatures_supplemental.csv` whose rows
-  can claim extensions away from a base-file row with the same header, not just add
-  alongside it, kept separate so `file_signatures.csv` stays an overwritable copy of its
-  upstream source). `sample.odt`/`sample.ods`/`sample.odp` each now narrow to exactly
-  their own extension, not a multi-way tie.
-- `sample.epub` doesn't get identified as `epub` at all: its header's general-purpose
-  flag doesn't match the strict EPUB signature, and its first non-directory entry
-  (`META-INF/container.xml`) isn't `mimetype` either, so neither detection path fires.
-  Documented as a known gap rather than fixed - see the comment on
-  `Spy_RealEpubFile_IsNotIdentifiedAsEpub_KnownGap` in `RealSampleFileTests.cs`.
-- `sample.doc`/`sample.xls`/`sample.ppt` (real LibreOffice output, all sharing the OLE2/
-  CFBF header `D0 CF 11 E0 A1 B1 1A E1`) originally all produced the exact same 17-way
-  tied result - `file_signatures.csv` carries offset-512 "subheader" signatures that look
-  meant to disambiguate doc/xls/ppt, but none of the specific ones match bytes
-  LibreOffice's writer actually produces at that offset, and the one generic pattern that
-  does match (`FD FF FF FF`, the "Thumbs.db subheader") is shorter than the main 8-byte
-  header match, so it never affects the result either way. Fixed by `Ole2ContainerSniffer`
-  parsing the OLE2 directory sector to find the distinctive stream name
-  (`WordDocument`/`Workbook`/`PowerPoint Document`) - confirmed, in these three fixtures,
-  to sit near the *end* of the file, not in a small fixed window near the start the way
-  ASF's codec name is (docs/adr/0008), so this needed a real (if minimal) CFB/OLE2 reader
-  rather than a bounded string search - see docs/adr/0011. Each fixture now narrows to a
-  single result, still tied with its own template/add-in/slideshow sibling
-  (doc/dot, xls/xla, ppt/pps) since the CFB structure alone can't tell those apart.
-- `sample.heic` surfaced that `file_signatures.csv`'s only HEIC row hardcodes the `ftyp`
-  box's size field as part of the match (`00 00 00 20 66 74 79 70 68 65 69 63`, i.e.
-  exactly a 32-byte box) - real encoders vary that size with how many compatible brands
-  they list, and this file uses a 24-byte box, so the row never fired; `Spy()` fell
-  through to the generic offset-0 `ftyp` row instead and misidentified it as
-  `3gp5`/`m4v`/`mp4`. Fixed with a size-agnostic supplemental row matching just `ftyp` +
-  major brand `heic` at offset 4 (the same pattern `file_signatures.csv` already uses for
-  MP4's own brand variants, e.g. `ftyp` + `3gp5`/`isom`), so it fires regardless of box
-  size.
+Real files catch what hand-built ones don't: real writers put directory placeholders
+ahead of the entry that matters, vary box sizes, and emit structures no spec example
+shows. The expected results in `RealSampleFileTests.cs` were captured by running the
+PRONOM engine against each fixture, and the known gaps (e.g. otf) are documented on
+their own tests there. (The fixtures predate the PRONOM engine; what they surfaced in
+the old one is in docs/adr/0009-0011, kept as history.)
 
 ### Not included
 

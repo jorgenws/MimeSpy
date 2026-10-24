@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MIME types for common PRONOM formats that PRONOM's DROID file gives none
+  (docs/adr/0026). Each type is taken from Apache httpd's mime.types
+  (https://svn.apache.org/repos/asf/httpd/httpd/trunk/docs/conf/mime.types) for the
+  format's own extension; MimeTypes is comma-separated, first one first.
+
+  This is a hand-checked list, not an extension lookup: many PRONOM formats share an
+  extension with an unrelated common one (.ics, .vcf), so a blanket mapping would mislabel
+  them. Every Puid must exist in the DROID file and have no MIME type there - loading
+  fails otherwise, so an entry PRONOM has since filled in gets noticed and removed.
+-->
+<MimeTypeAdditions>
+  <!-- Archives and disk images -->
+  <Format Puid="fmt/484" Name="7Zip format" MimeTypes="application/x-7z-compressed" />
+  <Format Puid="fmt/1098" Name="XZ File Format" MimeTypes="application/x-xz" />
+  <Format Puid="fmt/468" Name="ISO 9660 Disk Image File" MimeTypes="application/x-iso9660-image" />
+
+  <!-- Images -->
+  <Format Puid="fmt/2062" Name="AV1 Image File Format" MimeTypes="image/avif" />
+  <Format Puid="fmt/413" Name="Scalable Vector Graphics Tiny 1.2" MimeTypes="image/svg+xml" />
+  <Format Puid="x-fmt/367" Name="Truevision TGA Bitmap 1.0" MimeTypes="image/x-tga" />
+  <Format Puid="fmt/402" Name="Truevision TGA Bitmap 2.0" MimeTypes="image/x-tga" />
+
+  <!-- Audio and video -->
+  <Format Puid="fmt/569" Name="Matroska" MimeTypes="video/x-matroska, audio/x-matroska" />
+  <Format Puid="fmt/414" Name="Audio Interchange File Format" MimeTypes="audio/x-aiff" />
+  <Format Puid="fmt/596" Name="Apple Lossless Audio Codec" MimeTypes="audio/mp4" />
+  <Format Puid="fmt/649" Name="MPEG-1 Elementary Stream" MimeTypes="video/mpeg" />
+  <Format Puid="fmt/640" Name="MPEG-2 Elementary Stream" MimeTypes="video/mpeg" />
+  <Format Puid="fmt/585" Name="MPEG-2 Transport Stream" MimeTypes="video/mp2t" />
+  <Format Puid="fmt/1055" Name="M2TS" MimeTypes="video/mp2t" />
+  <Format Puid="fmt/441" Name="Windows Media Video 9 Advanced Profile" MimeTypes="video/x-ms-wmv" />
+
+  <!-- Applications and databases -->
+  <Format Puid="x-fmt/415" Name="Java Class File" MimeTypes="application/java-vm" />
+  <Format Puid="x-fmt/66" Name="Microsoft Access Database File 2.0" MimeTypes="application/x-msaccess" />
+  <Format Puid="x-fmt/238" Name="Microsoft Access Database File 95" MimeTypes="application/x-msaccess" />
+  <Format Puid="x-fmt/239" Name="Microsoft Access Database File 97" MimeTypes="application/x-msaccess" />
+  <Format Puid="x-fmt/240" Name="Microsoft Access Database File 2000" MimeTypes="application/x-msaccess" />
+  <Format Puid="x-fmt/241" Name="Microsoft Access Database File 2002" MimeTypes="application/x-msaccess" />
+  <Format Puid="fmt/1805" Name="Microsoft Access Database File 1.0" MimeTypes="application/x-msaccess" />
+  <Format Puid="fmt/1806" Name="Microsoft Access Database File 1.1" MimeTypes="application/x-msaccess" />
+  <Format Puid="fmt/1807" Name="Microsoft Access Encrypted Database File 1.0" MimeTypes="application/x-msaccess" />
+  <Format Puid="fmt/1808" Name="Microsoft Access Encrypted Database File 1.1" MimeTypes="application/x-msaccess" />
+  <Format Puid="fmt/1809" Name="Microsoft Access Encrypted Database File 2.0" MimeTypes="application/x-msaccess" />
+</MimeTypeAdditions>

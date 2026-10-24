@@ -2,13 +2,11 @@ using System.IO.Compression;
 
 namespace MimeSpy;
 
-/// <summary>
-/// Reads named entries out of a ZIP file on behalf of the container signature
-/// engine, via the framework's own <see cref="ZipArchive"/> (which seeks to the
-/// central directory at the end of the file, so this only ever makes sense against
-/// the complete file, never a leading prefix). Reads the stream it's given in place
-/// - only the central directory and the entries actually asked for are ever read.
-/// </summary>
+// Reads named entries out of a ZIP file on behalf of the container signature engine,
+// via the framework's own ZipArchive (which seeks to the central directory at the end
+// of the file, so this only ever makes sense against the complete file, never a leading
+// prefix). Reads the stream it's given in place - only the central directory and the
+// entries actually asked for are ever read.
 internal sealed class PronomZipContainerReader : IDisposable
 {
     private readonly ZipArchive _archive;
@@ -26,11 +24,9 @@ internal sealed class PronomZipContainerReader : IDisposable
         _archive = archive;
     }
 
-    /// <summary>
-    /// Opens the ZIP file that is the whole of <paramref name="stream"/> (which must
-    /// be seekable, with position 0 at the file's first byte). The stream is left
-    /// open when this reader is disposed - it belongs to the caller.
-    /// </summary>
+    // Opens the ZIP file that is the whole of stream (which must be seekable, with
+    // position 0 at the file's first byte). The stream is left open when this reader is
+    // disposed - it belongs to the caller.
     public static PronomZipContainerReader? TryOpen(Stream stream)
     {
         try
@@ -43,7 +39,7 @@ internal sealed class PronomZipContainerReader : IDisposable
         }
     }
 
-    /// <summary>The full decompressed content of the entry at <paramref name="path"/>, or null if it doesn't exist.</summary>
+    // The full decompressed content of the entry at path, or null if it doesn't exist.
     public byte[]? TryReadEntry(string path)
     {
         if (_entryCache.TryGetValue(path, out var cached))

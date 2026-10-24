@@ -2,18 +2,9 @@ using System.Globalization;
 
 namespace MimeSpy;
 
-/// <summary>
-/// Parses PRONOM's "extended hex" byte-pattern syntax into a <see cref="PronomBytePattern"/>.
-/// Shared by the DROID-native signature file (compact, whitespace-free - plain hex
-/// pairs and <c>[XX:YY]</c>-style bracket wildcards only) and the container-signature
-/// file (a superset written for human readability - the same bracket wildcards, plus
-/// whitespace between tokens, <c>'quoted ASCII'</c> literals including embedded
-/// spaces, quoted-char range brackets like <c>['6'-'7']</c>, and <c>(HH|HH)</c>
-/// byte-set alternation). One parser handles both: whitespace is only ever
-/// insignificant filler between tokens, so tolerating it - and the extra token
-/// shapes the DROID-native file never actually uses - costs nothing when parsing
-/// that simpler grammar.
-/// </summary>
+// Parses PRONOM's "extended hex" byte-pattern syntax. The DROID file uses plain hex
+// pairs and [XX:YY] brackets; the container file adds whitespace between tokens,
+// 'quoted ASCII', ['6'-'7'] ranges and (HH|HH) alternation. One parser handles both.
 internal static class PronomBytePatternParser
 {
     public static PronomBytePattern Parse(string raw)

@@ -3,14 +3,12 @@ using System.Xml;
 
 namespace MimeSpy;
 
-/// <summary>
-/// Parses the embedded PRONOM container-signature file once into
-/// <see cref="PronomContainerSignature"/>s grouped by <see cref="PronomContainerFile"/>'s
-/// container type, plus the two small lookup tables that tie them into the main
-/// DROID signature space: which PUID a matched container signature resolves to
-/// (<see cref="FindPuid"/>), and which top-level PUIDs are even worth opening a ZIP
-/// or OLE2 container for in the first place (<see cref="FindTriggerContainerType"/>).
-/// </summary>
+// Parses the embedded PRONOM container-signature file once into
+// PronomContainerSignatures grouped by PronomContainerFile's container type, plus the
+// two small lookup tables that tie them into the main DROID signature space: which PUID
+// a matched container signature resolves to (FindPuid), and which top-level PUIDs are
+// even worth opening a ZIP or OLE2 container for in the first place
+// (FindTriggerContainerType).
 internal static class PronomContainerSignatureIndex
 {
     private const string ResourceName = "pronom-container-signatures.xml";
@@ -62,21 +60,18 @@ internal static class PronomContainerSignatureIndex
         ContainerTypeByTriggerPuid = containerTypeByTriggerPuid;
     }
 
-    /// <summary>
-    /// Every container signature of <paramref name="containerType"/> ("ZIP" or "OLE2").
-    /// </summary>
+    // Every container signature of containerType ("ZIP" or "OLE2").
     public static IReadOnlyList<PronomContainerSignature> FindSignaturesByContainerType(string containerType) =>
         SignaturesByContainerType.TryGetValue(containerType, out var bucket) ? bucket : [];
 
-    /// <summary>The PUID a matched <see cref="PronomContainerSignature.Id"/> resolves to.</summary>
+    // The PUID a matched PronomContainerSignature.Id resolves to.
     public static string? FindPuid(int containerSignatureId) => PuidBySignatureId.TryGetValue(containerSignatureId, out var puid) ? puid : null;
 
-    /// <summary>
-    /// "ZIP" or "OLE2" if <paramref name="puid"/> is one of the top-level formats
-    /// worth opening a container for (e.g. the generic ZIP/OLE2 PUIDs themselves),
-    /// null otherwise.
-    /// </summary>
+    // "ZIP" or "OLE2" if puid is one of the top-level formats worth opening a container
+    // for (e.g. the generic ZIP/OLE2 PUIDs themselves), null otherwise.
     public static string? FindTriggerContainerType(string puid) => ContainerTypeByTriggerPuid.TryGetValue(puid, out var containerType) ? containerType : null;
+
+    public static IEnumerable<string> TriggerPuids => ContainerTypeByTriggerPuid.Keys;
 
     private static PronomContainerSignature ParseContainerSignature(XmlReader reader)
     {

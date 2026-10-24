@@ -1,5 +1,7 @@
 # ASF's primary mime type is resolved by searching for a codec-name string, not by parsing the header object graph
 
+> Superseded by [ADR 0020](0020-legacy-signature-engine-removed-in-favor-of-pronom-alone.md). `AsfContainerSniffer` was removed with the engine it belonged to.
+
 Like Ogg ([ADR 0007](0007-ogg-mime-type-resolved-by-content-sniffing.md)), one `file_signatures.csv` row covers ASF/WMA/WMV: the 8-byte prefix of the ASF Header Object GUID (`30 26 B2 75 8E 66 CF 11`) is shared verbatim by generic ASF containers, WMA (audio), and WMV (video), and alias-count picks `video/x-ms-asf` for all of them regardless of actual content. Unlike Ogg, there's no fixed offset to peek at - properly telling these apart means walking the header's variable-length list of objects to find the Stream Properties Object and reading its embedded stream-type GUID (Audio Media vs Video Media), which is a real parser, not a peek.
 
 We decided to do what Apache Tika does instead: search a bounded window of the file for the (UTF-16LE) codec-name string a Windows Media encoder conventionally writes into its Codec List/Content Description objects, rather than parsing the object graph. From Tika's `tika-mimetypes.xml` (https://raw.githubusercontent.com/apache/tika/main/tika-core/src/main/resources/org/apache/tika/mime/tika-mimetypes.xml, retrieved 2026-09-06):

@@ -1,5 +1,7 @@
 # Legacy OLE2 Office formats (doc/xls/ppt) are disambiguated by directory entry name, not by a fixed-offset byte pattern
 
+> Superseded by [ADR 0020](0020-legacy-signature-engine-removed-in-favor-of-pronom-alone.md). `Ole2ContainerSniffer` was removed; OLE2 sub-formats are resolved by PRONOM's container signatures.
+
 `doc`, `xls`, `ppt` (and `dot`, `xla`, `pps`, plus unrelated formats like Access, Visio,
 Publisher, MSI) are all OLE2/Compound File Binary Format files sharing the identical
 8-byte header `D0 CF 11 E0 A1 B1 1A E1`. `file_signatures.csv`'s "Microsoft Office

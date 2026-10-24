@@ -34,7 +34,7 @@ public class LargeStreamTests
     }
 
     [Fact]
-    public void Investigate_LargeDocStream_NarrowsToWordSpecificPuids()
+    public void Investigate_LargeDocStream_NarrowsToWord97()
     {
         // OLE2 sectors are addressed from the header, so trailing bytes past the
         // last sector are never looked at - padding at the end leaves the file valid.
@@ -43,8 +43,8 @@ public class LargeStreamTests
 
         var result = _sut.Investigate(stream);
 
-        Assert.Equal(2, result.Count);
-        Assert.All(result, f => Assert.Contains("doc", f.Extensions));
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/40", single.Puid);
         Assert.Equal(Puids(_sut.Investigate(bytes)), Puids(result));
     }
 

@@ -1,130 +1,109 @@
 namespace MimeSpy;
 
-/// <summary>
-/// Matches bytes against PRONOM's DROID signature table. A signature's byte
-/// sequences chain together left-to-right (BOF-anchored) or right-to-left
-/// (EOF-anchored). Each <see cref="PronomSubSequence"/>'s outer gap window bounds
-/// not the anchor's own position, but the reach of the whole unit on the side facing
-/// the previous chain step - the leftmost point of its left-fragment chain for a
-/// forward (BOF) walk, the rightmost point of its right-fragment chain for a
-/// backward (EOF) walk - falling back to the anchor's own start/end when that side
-/// has no fragments. If a fragment chain fails to hold for a given anchor
-/// occurrence, the search backtracks to the next occurrence in range rather than
-/// giving up outright - a short, common anchor (e.g. a single "@" or "\") can occur
-/// incidentally before the one that's actually surrounded by valid fragments.
-/// </summary>
+// Matches bytes against PRONOM's DROID signature table. A signature's byte sequences
+// chain together left-to-right (BOF-anchored) or right-to-left (EOF-anchored). Each
+// PronomSubSequence's outer gap window bounds not the anchor's own position, but the
+// reach of the whole unit on the side facing the previous chain step - the leftmost
+// point of its left-fragment chain for a forward (BOF) walk, the rightmost point of its
+// right-fragment chain for a backward (EOF) walk - falling back to the anchor's own
+// start/end when that side has no fragments. If a fragment chain fails to hold for a
+// given anchor occurrence, the search backtracks to the next occurrence in range rather
+// than giving up outright - a short, common anchor (e.g. a single "@" or "\") can occur
+// incidentally before the one that's actually surrounded by valid fragments.
 internal static class PronomSignatureMatcher
 {
     // Every loop over an IReadOnlyList<T> here indexes it rather than using foreach:
     // foreach through the interface boxes a new enumerator per loop, and the fragment
     // search below runs its loops once per candidate position - on a large buffer
     // that was tens of MB of garbage per call, and a measurable share of the time.
-    // How a signature's end-of-file-anchored ByteSequences are treated when
-    // bytes might only be a leading prefix of the real file:
-    //   Ignore (Spy) - EOF sequences are skipped rather than evaluated, so a
-    //     signature matches on its BOF portion alone. For a format whose BOF happens
-    //     to be shared with another cataloged format (e.g. TIFF/DNG, GIF/Persuasion
-    //     Player - see docs/adr/0017), skipping EOF for both sides means both match,
-    //     surfacing the real ambiguity as a tie instead of silently guessing one.
-    //   Require (Investigate) - EOF sequences are evaluated against the true end of
-    //     the file, so the EOF-side buffer must end where the file does.
-    private enum EofPolicy
+
+    // For Spy: bytes may be only a leading prefix, so EOF-anchored sequences are skipped
+    // (docs/adr/0017). A match here may not survive FindFullMatches on the whole file.
+    // Two formats sharing a BOF (e.g. TIFF/DNG) both match - a tie, not a guess.
+    public static IReadOnlyList<PronomMatch> FindHeaderMatches(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, bytes, checkEof: false, filter);
+
+    // For Investigate: BOF sequences are matched against head (starting at the file's
+    // first byte), EOF sequences against tail (ending at its last byte). Pass the same
+    // span twice for a whole file in memory, or a window onto each end of a large one;
+    // each side's offsets are relative to its own end, so only an unbounded gap that
+    // runs past its window is affected.
+    public static IReadOnlyList<PronomMatch> FindFullMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, PronomFormatFilter? filter = null) => FindMatches(head, tail, checkEof: true, filter);
+
+    // One signature against complete content - a container entry, for PronomContainerMatcher.
+    public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, bytes, checkEof: true);
+
+    // Only signatures that could match head[0] are tried: those indexed under that byte,
+    // plus the small set with no fixed first byte, which are always tried. A filter swaps
+    // in its own narrower pair of sets, and drops formats it doesn't allow as they match.
+    private static IReadOnlyList<PronomMatch> FindMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter)
     {
-        Ignore,
-        Require,
-    }
-
-    /// <summary>
-    /// Matches signatures against a buffer that may only be a leading prefix of the
-    /// real file, skipping a signature's end-of-file-anchored sequences rather than
-    /// evaluating them - so this can report a format PRONOM itself only considers
-    /// confirmed once its trailer is checked (docs/adr/0017). A match here is not
-    /// guaranteed to also be reported by <see cref="FindMatchesFull"/> against the
-    /// same file's complete bytes.
-    /// </summary>
-    public static IReadOnlyList<PronomFileFormat> FindMatchesGuess(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, bytes, EofPolicy.Ignore, filter);
-
-    /// <summary>
-    /// Matches signatures against a complete file, so end-of-file-anchored sequences
-    /// can be evaluated against its true end. BOF-anchored sequences are evaluated
-    /// against <paramref name="head"/> (which starts at the file's first byte),
-    /// EOF-anchored ones against <paramref name="tail"/> (which ends at the file's
-    /// last byte) - pass the same span as both when the whole file is in hand. A file
-    /// too large to hold whole can pass a window onto each end instead: every offset
-    /// either side works with is relative to its own end of the file, so neither needs
-    /// to know how far apart the two windows really are - but a sequence whose gap
-    /// reaches past the end of its window (only possible for PRONOM's unbounded gaps)
-    /// is searched only as far as the window goes.
-    /// </summary>
-    public static IReadOnlyList<PronomFileFormat> FindMatchesFull(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, PronomFormatFilter? filter = null) => FindMatches(head, tail, EofPolicy.Require, filter);
-
-    /// <summary>
-    /// Matches a single signature against <paramref name="bytes"/> as complete
-    /// content (a container signature's extracted entry, e.g.) - used by
-    /// <see cref="PronomContainerMatcher"/> rather than the DROID table walk above.
-    /// </summary>
-    public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, bytes, EofPolicy.Require);
-
-    // Rather than walking every cataloged format's signature(s) against every file,
-    // only signatures that could possibly match head[0] are tried: those indexed
-    // under that exact byte, plus the (much smaller) set PronomSignatureIndex
-    // couldn't pin to one required first byte at all (see its own
-    // TryGetRequiredFirstByte doc) - those are always tried, so this never excludes
-    // a signature that could legitimately match, only ones whose own BOF anchor
-    // proves it can't. filter, when given, swaps both candidate sets for a narrower
-    // pair built from only the signatures its included formats reference (see
-    // PronomFormatFilter) - null (the default, unfiltered MimeSpy()) takes the exact
-    // same path as before filtering existed. Everything past this candidate
-    // selection - Matches() itself, and resolving a matched signature back to its
-    // claiming format(s) - is unaware filtering exists at all.
-    //
-    // head and tail are the same span whenever the whole file is in hand; see
-    // FindMatchesFull for when they aren't.
-    private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, EofPolicy eofPolicy, PronomFormatFilter? filter)
-    {
-        List<PronomFileFormat>? matches = null;
-        HashSet<int>? matchedFormatIds = null;
+        List<PronomMatch>? matches = null;
+        Dictionary<int, int>? indexByFormatId = null;
 
         if (head.Length > 0)
         {
             var candidates = filter is null
                 ? PronomSignatureIndex.FindSignatureIdsByFirstByte(head[0])
                 : filter.FindSignatureIdsByFirstByte(head[0]);
-            TryMatchCandidates(candidates, head, tail, eofPolicy, ref matches, ref matchedFormatIds);
+            TryMatchCandidates(candidates, head, tail, checkEof, filter, ref matches, ref indexByFormatId);
         }
 
         var fallback = filter?.SignatureIdsWithoutFixedFirstByte ?? PronomSignatureIndex.SignatureIdsWithoutFixedFirstByte;
-        TryMatchCandidates(fallback, head, tail, eofPolicy, ref matches, ref matchedFormatIds);
+        TryMatchCandidates(fallback, head, tail, checkEof, filter, ref matches, ref indexByFormatId);
 
-        return matches ?? (IReadOnlyList<PronomFileFormat>)[];
+        if (matches is null)
+        {
+            return [];
+        }
+
+        return PronomPriority.Order(PronomPriority.RemoveOutranked(matches, filter));
     }
 
-    // matchedFormatIds dedupes across the two candidate sets above, and across a
-    // single format's own alternative signatures (PronomFileFormat.InternalSignatureIds
-    // is an OR - a format with two alternative signatures that both match must still
-    // only appear once).
-    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, EofPolicy eofPolicy, ref List<PronomFileFormat>? matches, ref HashSet<int>? matchedFormatIds)
+    // indexByFormatId dedupes across the two candidate sets above, and across a single
+    // format's own alternative signatures (PronomFileFormat.InternalSignatureIds is an OR
+    // - a format with two alternative signatures that both match must still only appear
+    // once). Without checkEof, a signature with an EOF sequence only matches partially;
+    // a format is a full match if any of its matching signatures was checked in full, and
+    // otherwise remembers which EOF checks it skipped. A format the filter doesn't allow
+    // is skipped even when a signature it shares with an allowed one matches.
+    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter, ref List<PronomMatch>? matches, ref Dictionary<int, int>? indexByFormatId)
     {
         for (var i = 0; i < signatureIds.Count; i++)
         {
             var signatureId = signatureIds[i];
-            if (!Matches(PronomSignatureIndex.GetSignature(signatureId), head, tail, eofPolicy))
+            var signature = PronomSignatureIndex.GetSignature(signatureId);
+            if (!Matches(signature, head, tail, checkEof))
             {
                 continue;
             }
 
+            var skippedEofPart = checkEof ? null : signature.EofPartKey;
             var formats = PronomSignatureIndex.FindFormatsBySignatureId(signatureId);
             for (var j = 0; j < formats.Count; j++)
             {
                 var format = formats[j];
-                matchedFormatIds ??= [];
-                if (!matchedFormatIds.Add(format.Id))
+                // With checkEof (Investigate), a disallowed container trigger is kept for
+                // PronomContainerMatcher - see PronomFormatFilter.
+                if (filter is not null && !filter.Allows(format) && !(checkEof && filter.IsContainerTrigger(format)))
                 {
                     continue;
                 }
 
                 matches ??= [];
-                matches.Add(format);
+                indexByFormatId ??= [];
+                if (!indexByFormatId.TryGetValue(format.Id, out var index))
+                {
+                    indexByFormatId[format.Id] = matches.Count;
+                    matches.Add(skippedEofPart is null
+                        ? new PronomMatch(format, Match.Full)
+                        : new PronomMatch(format, Match.Partial, [skippedEofPart]));
+                }
+                else if (matches[index].Match == Match.Partial)
+                {
+                    matches[index] = skippedEofPart is null
+                        ? new PronomMatch(format, Match.Full)
+                        : new PronomMatch(format, Match.Partial, [.. matches[index].SkippedEofParts!, skippedEofPart]);
+                }
             }
         }
     }
@@ -140,9 +119,9 @@ internal static class PronomSignatureMatcher
     private const int InitialProbeBudget = 50_000;
 
     // A signature's byte sequences are an AND: every one of them - BOF and EOF alike -
-    // has to match for the signature as a whole to match (subject to eofPolicy).
+    // has to match for the signature as a whole to match (EOF ones only when checkEof).
     // BOF sequences only ever look at head, EOF sequences only ever at tail.
-    private static bool Matches(PronomInternalSignature signature, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, EofPolicy eofPolicy)
+    private static bool Matches(PronomInternalSignature signature, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof)
     {
         var budget = InitialProbeBudget;
         var matchedBof = false;
@@ -151,7 +130,7 @@ internal static class PronomSignatureMatcher
             var byteSequence = signature.ByteSequences[i];
             if (byteSequence.Anchor == PronomAnchor.EndOfFile)
             {
-                if (eofPolicy == EofPolicy.Ignore)
+                if (!checkEof)
                 {
                     continue;
                 }
@@ -171,12 +150,12 @@ internal static class PronomSignatureMatcher
             }
         }
 
-        // Under Ignore, a signature made up entirely of EOF-anchored sequences (a
+        // Without checkEof, a signature made up entirely of EOF-anchored sequences (a
         // few formats - e.g. TGA Bitmap, Apple Disk Image - are identified only by
         // their trailer, no BOF at all) has had every one of them skipped, and would
         // match vacuously. There has to be at least one BOF sequence actually
         // evaluated for a "guess" to mean anything.
-        return eofPolicy == EofPolicy.Require || matchedBof;
+        return checkEof || matchedBof;
     }
 
     // subSequences is ordered by Position ascending (1 = closest to the start of

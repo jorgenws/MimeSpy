@@ -1,30 +1,24 @@
 namespace MimeSpy;
 
-/// <summary>
-/// Refines a set of core DROID matches using PRONOM's container-signature table:
-/// when one of those matches is a generic ZIP/OLE2 PUID
-/// (<see cref="PronomContainerSignatureIndex.FindTriggerContainerType"/> says which
-/// ones are), opens the container and checks its named entries against every
-/// container signature of that type, resolving to whichever more specific PUIDs
-/// match instead.
-/// </summary>
+// Refines a set of core DROID matches using PRONOM's container-signature table: when
+// one of those matches is a generic ZIP/OLE2 PUID
+// (PronomContainerSignatureIndex.FindTriggerContainerType says which ones are), opens
+// the container and checks its named entries against every container signature of that
+// type, resolving to whichever more specific PUIDs match instead.
 internal static class PronomContainerMatcher
 {
-    /// <param name="file">
-    /// The complete file, seekable, with position 0 at its first byte - both readers
-    /// need random access to all of it (ZIP's central directory lives at the end;
-    /// OLE2 entries can be anywhere), so this can never work from a leading-prefix
-    /// buffer the way the core match can. Read in place: only the structures and
-    /// entries the readers actually need are read, never the whole file. Its
-    /// position is left wherever the readers last moved it.
-    /// </param>
-    /// <param name="coreMatches">The file's matches from <see cref="PronomSignatureMatcher.FindMatchesFull"/>.</param>
-    public static IReadOnlyList<PronomFileFormat> Refine(Stream file, IReadOnlyList<PronomFileFormat> coreMatches)
+    // file is the complete file, seekable, at position 0. The readers need random access
+    // to it (a ZIP's central directory is at the end, OLE2 entries can be anywhere) and
+    // read only what they need, in place. Its position is left wherever they stopped.
+    // coreMatches is FindFullMatches' result for the same file. A container result the
+    // filter doesn't allow is dropped; if none is left, coreMatches stands - minus any
+    // container trigger the filter kept only so this check could run.
+    public static IReadOnlyList<PronomMatch> Refine(Stream file, IReadOnlyList<PronomMatch> coreMatches, PronomFormatFilter? filter)
     {
         string? containerType = null;
-        foreach (var format in coreMatches)
+        foreach (var match in coreMatches)
         {
-            containerType = PronomContainerSignatureIndex.FindTriggerContainerType(format.Puid);
+            containerType = PronomContainerSignatureIndex.FindTriggerContainerType(match.Format.Puid);
             if (containerType is not null)
             {
                 break;
@@ -39,15 +33,15 @@ internal static class PronomContainerMatcher
         var puids = containerType == "ZIP" ? MatchZip(file) : MatchOle2(file);
         if (puids.Count == 0)
         {
-            return coreMatches;
+            return OnlyAllowed(coreMatches, filter);
         }
 
-        List<PronomFileFormat> formats = [];
+        List<PronomMatch> formats = [];
         foreach (var puid in puids)
         {
-            if (PronomSignatureIndex.FindFormatByPuid(puid) is { } format)
+            if (PronomSignatureIndex.FindFormatByPuid(puid) is { } format && (filter is null || filter.Allows(format)))
             {
-                formats.Add(format);
+                formats.Add(new PronomMatch(format, Match.Full));
             }
         }
 
@@ -55,8 +49,12 @@ internal static class PronomContainerMatcher
         // DROID FileFormatCollection (shouldn't happen in practice, PRONOM's PUID
         // space is unified - but if it ever did, falling back to the generic
         // container match beats claiming a format this library can't describe).
-        return formats.Count > 0 ? formats : coreMatches;
+        // DROID applies the same priorities to container hits as to binary ones.
+        return formats.Count > 0 ? PronomPriority.Order(PronomPriority.RemoveOutranked(formats)) : OnlyAllowed(coreMatches, filter);
     }
+
+    private static IReadOnlyList<PronomMatch> OnlyAllowed(IReadOnlyList<PronomMatch> matches, PronomFormatFilter? filter) =>
+        filter is null ? matches : [.. matches.Where(m => filter.Allows(m.Format))];
 
     private static IReadOnlyList<string> MatchZip(Stream file)
     {

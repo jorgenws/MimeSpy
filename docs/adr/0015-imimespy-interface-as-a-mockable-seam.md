@@ -1,5 +1,7 @@
 # IMimeSpy exists as a mockable seam, not for testing MimeSpy itself
 
+> Still in force. `Result` is now `Dossier`, and the interface also mirrors `Investigate` ([ADR 0020](0020-legacy-signature-engine-removed-in-favor-of-pronom-alone.md)); the reasoning is unchanged.
+
 `MimeSpy.Spy`/`SpyAsync` are pure, deterministic functions of the bytes handed
 to them - no I/O beyond the caller-supplied stream, no clock, no randomness -
 and `Result` (the return type) is already a publicly constructible record.

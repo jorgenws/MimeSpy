@@ -10,7 +10,7 @@ IReadOnlyList<Dossier> results = spy.Spy(bytes);
 
 foreach (var result in results)
 {
-    Console.WriteLine($"{result.MimeType} ({string.Join(", ", result.Extensions)}): {result.Name} ({result.Puid})");
+    Console.WriteLine($"{result.MimeType} ({string.Join(", ", result.Extensions)}): {result.Name} ({result.Puid}), {result.Match} match");
 }
 ```
 
@@ -19,7 +19,9 @@ MimeSpy identifies formats using [PRONOM](https://www.nationalarchives.gov.uk/PR
 - **`Spy`** is the practical default for a quick "what kind of file is this" guess from a partial read. It evaluates a signature's header (start-of-file) portion and skips any trailer check it would otherwise need - so it also reports formats PRONOM can only fully confirm by a trailer near the end of the file (PNG, JPEG, GIF, and plain ZIP among them). That means a match here isn't guaranteed to hold up once the whole file is checked - a truncated or corrupted file could pass the header check and still fail `Investigate`.
 - **`Investigate`** requires the complete file. It evaluates end-anchored signatures for real, and runs PRONOM's container-signature engine to resolve a generic ZIP/OLE2 match to its specific format (docx vs xlsx vs plain zip, doc vs xls, ...). `Investigate(Stream)` needs a seekable stream at position 0, and doesn't read it into memory: past 16 MiB it reads 8 MiB from each end, plus the container parts it needs, so a 50 GB file costs about the same as a 20 MB one. See [docs/adr/0022](docs/adr/0022-investigate-stream-requires-seeking-and-reads-bounded-windows.md) for the trade-off that involves.
 
-A single header can genuinely match more than one format, so callers should expect more than one `Dossier` back from either of these - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md). The split, what each one can and can't see, and why, is covered in [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md) and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
+When two matching formats are related by PRONOM's priority data (WAV over generic RIFF, say), only the more specific one is returned ([docs/adr/0023](docs/adr/0023-droid-priority-relations-drop-outranked-matches.md)). Bytes can still genuinely match more than one format, so callers should expect more than one `Dossier` back from either method - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md).
+
+Each `Dossier` has a `Match`: `Full` when every part of the format's signature was checked, `Partial` when `Spy` skipped its end-of-file check. Results are ordered full matches first, then more specific formats before the ones they refine, so `results[0]` is the best single answer. A plain TIFF under `Spy`, for example, comes back as TIFF (full) followed by the DNG, GeoTIFF and Exif variants its header is also consistent with (partial) - see [docs/adr/0024](docs/adr/0024-dossier-reports-full-or-partial-match-and-results-are-ordered.md). The split, what each one can and can't see, and why, is covered in [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md) and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
 
 Both take a `ReadOnlySpan<byte>` or a `Stream`, and the `Stream` overloads have async twins (`SpyAsync`/`InvestigateAsync`). There's no async overload of the `ReadOnlySpan<byte>` form - see [docs/adr/0014-async-overload-only-on-the-stream-api.md](docs/adr/0014-async-overload-only-on-the-stream-api.md).
 
@@ -37,7 +39,15 @@ If you already know you'll only ever hand MimeSpy one broad category of file - s
 var spy = new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/", "audio/"] });
 ```
 
-`MimeTypes` patterns are matched by case-insensitive starting-with against each format's own MIME type - `"image/"` catches every image subtype, `"application/pdf"` catches that one exactly - and are additive: a format is included if it matches *any* pattern. The default (no options at all, or an empty `MimeTypes` list) considers every cataloged format, identical to `new MimeSpy()`. The narrowed index is built once, at construction, not per call.
+`MimeTypes` patterns are a plain, case-insensitive starts-with against each format's MIME types, so any prefix works - `"image/"` catches every image subtype, `"image/j"` catches every one starting that way, such as `image/jpeg` and `image/jxl`. A full type also catches longer types that start with it: `"font/woff"` includes `font/woff2`, and `"application/vnd.ms-excel"` includes the macro-enabled Excel types. Patterns are additive: a format is included if any of its types matches *any* pattern. The default (no options at all, or an empty `MimeTypes` list) considers every cataloged format, identical to `new MimeSpy()`. The narrowed index is built once, at construction, not per call.
+
+`ExcludedMimeTypes` takes patterns the same way and leaves out every format with a type matching one, even if `MimeTypes` includes it. Combined, they say exactly which answers you want - for example every image format except DNG, so a DNG file reports as the TIFF it's built on rather than as DNG:
+
+```csharp
+var spy = new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/"], ExcludedMimeTypes = ["image/dng"] });
+```
+
+A left-out format is never returned and never outranks one that's allowed. The generic ZIP and OLE2 formats are still matched behind the scenes when needed, so excluding `application/zip` - or including only `application/vnd.openxmlformats` - still finds a docx by opening the archive; the plain-ZIP answer is what's left out. See [docs/adr/0027](docs/adr/0027-options-exclude-formats-and-filter-results-not-just-signatures.md).
 
 ### Dependency injection
 
@@ -89,6 +99,8 @@ See [docs/releasing.md](docs/releasing.md) for how to cut a new NuGet release.
 ## Data
 
 Both signature tables are [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/)'s own data, published by the UK National Archives: `Resources/pronom-droid-signatures.xml` is DROID's signature file (format/extension/mime-type metadata plus the byte-sequence signatures themselves), and `Resources/pronom-container-signatures.xml` is DROID's container signature file (the rules behind resolving a generic ZIP/OLE2 match to a specific format - docx vs xlsx vs plain zip, doc vs xls, ...). Both are embedded as resources under [Resources/](Resources/) in their native XML and parsed once into in-memory indexes at first use.
+
+PRONOM gives most formats no MIME type, including some common ones (7z, Matroska, xz, AVIF, MPEG video, ISO images). `Resources/mimespy-mime-types.xml` fills those in for a short, hand-checked list, using Apache httpd's `mime.types`; it never overrides a type PRONOM gives. See [docs/adr/0026](docs/adr/0026-mime-types-for-common-formats-pronom-leaves-empty.md).
 
 ## License
 

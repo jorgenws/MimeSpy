@@ -1,16 +1,21 @@
 namespace MimeSpy;
 
-/// <summary>
-/// A file format record from PRONOM's DROID signature file. Matches if any one of
-/// <see cref="InternalSignatureIds"/> matches (each is an alternative signature for
-/// the same format, e.g. different versions of the same magic bytes) - unlike a
-/// single signature's own <see cref="PronomByteSequence"/> list, which is an AND.
-/// </summary>
+// A file format record from PRONOM's DROID signature file. Matches if any one of
+// InternalSignatureIds matches (each is an alternative signature for the same format,
+// e.g. different versions of the same magic bytes) - unlike a single signature's own
+// PronomByteSequence list, which is an AND. HasPriorityOverIds lists the format IDs this
+// one outranks when both match (see PronomPriority).
 internal sealed record PronomFileFormat(
     int Id,
     string Puid,
     string Name,
     string? Version,
-    string? MimeType,
+    IReadOnlyList<string> MimeTypes,
     IReadOnlyList<string> Extensions,
-    IReadOnlyList<int> InternalSignatureIds);
+    IReadOnlyList<int> InternalSignatureIds,
+    IReadOnlyList<int> HasPriorityOverIds);
+
+// A format that matched, and whether every part of the signature it matched by was
+// checked. A partial match carries the EofPartKey of each signature it partially matched
+// by - the end-of-file checks it skipped.
+internal readonly record struct PronomMatch(PronomFileFormat Format, Match Match, IReadOnlyList<string>? SkippedEofParts = null);

@@ -2,14 +2,12 @@ using System.Xml;
 
 namespace MimeSpy;
 
-/// <summary>
-/// Parses a PRONOM <c>&lt;InternalSignature&gt;</c> element - the
-/// ByteSequence/SubSequence/LeftFragment/RightFragment structure shared verbatim
-/// between the DROID-native signature file and the container-signature file's
-/// per-entry <c>&lt;BinarySignatures&gt;</c>. The two files differ only in how a
-/// Sequence/Fragment's text content is written (see
-/// <see cref="PronomBytePatternParser"/>), not in this surrounding element shape.
-/// </summary>
+// Parses a PRONOM <InternalSignature> element - the
+// ByteSequence/SubSequence/LeftFragment/RightFragment structure shared verbatim between
+// the DROID-native signature file and the container-signature file's per-entry
+// <BinarySignatures>. The two files differ only in how a Sequence/Fragment's text
+// content is written (see PronomBytePatternParser), not in this surrounding element
+// shape.
 internal static class PronomInternalSignatureParser
 {
     public static PronomInternalSignature ParseInternalSignature(XmlReader reader)

@@ -41,6 +41,31 @@ public class MimeSpyTests
         Assert.Empty(result);
     }
 
+    [Theory]
+    [MemberData(nameof(SpanMethods))]
+    public void Wav_PriorityDropsTheGenericRiffAndWaveformMatches(SpanMethod method)
+    {
+        // A WAV file also matches PRONOM's generic RIFF (fmt/1886) and Waveform Audio
+        // (fmt/6) signatures. PCMWAVEFORMAT (fmt/141) has priority over both, and its
+        // signature is BOF-only, so even Spy has checked it in full.
+        var result = method.Invoke(_sut, WavBytes);
+
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/141", single.Puid);
+        Assert.Equal(Match.Full, single.Match);
+    }
+
+    [Fact]
+    public void Spy_FormatWithSeveralMimeTypes_ListsThemSeparately()
+    {
+        // PRONOM stores RTF's as one comma-joined string, "application/rtf, text/rtf".
+        var result = _sut.Spy(@"{\rtf1\ansi\deff0 Hello}"u8);
+
+        Assert.NotEmpty(result);
+        Assert.All(result, f => Assert.Equal(["application/rtf", "text/rtf"], f.MimeTypes));
+        Assert.All(result, f => Assert.Equal("application/rtf", f.MimeType));
+    }
+
     [Fact]
     public void Spy_ViaIMimeSpyReference_MatchesSameAsConcreteType()
     {
@@ -67,11 +92,12 @@ public class MimeSpyTests
     // not by Investigate.
 
     [Fact]
-    public void Spy_PdfHeaderWithoutTrailer_MatchesPdf_BySkippingTheEofCheck()
+    public void Spy_PdfHeaderWithoutTrailer_MatchesPdf_AsAPartialMatch()
     {
         var result = _sut.Spy(PdfHeaderOnly);
 
-        Assert.Contains(result, f => f.Extensions.Contains("pdf"));
+        var pdf = Assert.Single(result, f => f.Extensions.Contains("pdf"));
+        Assert.Equal(Match.Partial, pdf.Match);
     }
 
     [Fact]

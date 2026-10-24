@@ -1,5 +1,7 @@
 # Sniff and Investigate are split by whether they can see the end of the file
 
+> Superseded by [ADR 0021](0021-sniff-removed-spy-and-investigate-are-the-only-methods.md). `Sniff` was removed; `Investigate`'s side of the split still holds.
+
 PRONOM signatures aren't uniformly BOF-anchored the way the old CSV table's
 were: a `ByteSequence` can be anchored to either end of the file, and PRONOM's
 container-signature table (ZIP/OLE2 sub-format disambiguation - docx vs xlsx

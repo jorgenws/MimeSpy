@@ -2,24 +2,12 @@ using System.Text;
 
 namespace MimeSpy;
 
-/// <summary>
-/// A minimal read-only MS-CFB (Compound File Binary Format,
-/// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) reader for
-/// the container signature engine: given a seekable stream over a complete OLE2 file,
-/// resolves a (possibly nested, e.g. <c>"Document/Page1"</c>) stream path to its full
-/// content. Reads the stream in place, sector by sector - only the header, the
-/// directory, the FAT sectors it needs, and the streams actually asked for are ever
-/// read, never the whole file.
-///
-/// Unlike a flat directory-entry-name lookup - which only needs the *names*,
-/// and so skips both stream content and the directory's red-black tree structure
-/// entirely - this needs real content (via the regular FAT chain for large streams,
-/// or the MiniFAT/mini-stream for small ones) and real path resolution (via that
-/// tree), so it's a complete reader rather than a name-only one. This only follows FAT sectors reachable
-/// through the header's own embedded DIFAT array (up to 109 entries - good for
-/// roughly the first 7MB of a 512-byte-sector file), never the additional-DIFAT-
-/// sector chain beyond that.
-/// </summary>
+// A minimal read-only MS-CFB reader
+// (https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/): resolves a
+// stream path, possibly nested ("Document/Page1"), to its content. Reads in place,
+// sector by sector, never the whole file. Only FAT sectors listed in the header's own
+// 109-entry DIFAT array are followed (roughly the first 7MB at 512-byte sectors), not
+// the additional DIFAT sector chain.
 internal sealed class PronomOle2ContainerReader
 {
     private const int HeaderSize = 512;
@@ -74,11 +62,9 @@ internal sealed class PronomOle2ContainerReader
         _miniStreamCutoff = miniStreamCutoff;
     }
 
-    /// <summary>
-    /// Opens the OLE2 file that is the whole of <paramref name="stream"/> (which must
-    /// be seekable, with position 0 at the file's first byte). The reader moves the
-    /// stream's position as it reads and doesn't restore it.
-    /// </summary>
+    // Opens the OLE2 file that is the whole of stream (which must be seekable, with
+    // position 0 at the file's first byte). The reader moves the stream's position as
+    // it reads and doesn't restore it.
     public static PronomOle2ContainerReader? TryOpen(Stream stream)
     {
         var header = new byte[HeaderSize];
@@ -111,12 +97,10 @@ internal sealed class PronomOle2ContainerReader
         return reader._rootIndex < 0 ? null : reader;
     }
 
-    /// <summary>
-    /// The full content of the stream at <paramref name="path"/> (segments separated
-    /// by <c>/</c> for a stream nested inside one or more storages), or null if any
-    /// segment doesn't exist or isn't the expected kind (storage for every segment
-    /// but the last, stream for the last).
-    /// </summary>
+    // The full content of the stream at path (segments separated by / for a stream
+    // nested inside one or more storages), or null if any segment doesn't exist or
+    // isn't the expected kind (storage for every segment but the last, stream for the
+    // last).
     public byte[]? TryReadStream(string path)
     {
         if (_streamCache.TryGetValue(path, out var cached))

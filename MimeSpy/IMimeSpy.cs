@@ -1,135 +1,110 @@
 namespace MimeSpy;
 
 /// <summary>
-/// Detects file format(s) from a file's bytes, using PRONOM's own signature data.
-/// Implemented by <see cref="MimeSpy"/>, which has no constructor arguments and no
-/// mutable state - register it as a singleton against this interface for callers that
-/// want a mockable seam (e.g. flow code that calls these methods inline rather than
-/// taking a pre-computed <see cref="Dossier"/> list as input).
+/// Detects file formats from a file's bytes, using PRONOM's signature data. Every method
+/// returns every format that matched; an empty list means none did, and more than one
+/// means the bytes can't tell those formats apart.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Where PRONOM ranks one matching format over another (WAV over generic RIFF, say), only
+/// the higher one is returned - unless the higher one is a <see cref="Match.Partial"/> match
+/// whose skipped check could still rule it out, in which case both are returned. Results are ordered: <see cref="Match.Full"/>
+/// matches before <see cref="Match.Partial"/> ones, and within each, more specific formats
+/// before the ones they refine - so the first result is the best single answer.
+/// </para>
+/// <para>
+/// <see cref="MimeSpy"/> is the implementation and has no mutable state, so it can be
+/// registered as a singleton. This interface exists so callers can mock it.
+/// </para>
+/// </remarks>
 public interface IMimeSpy
 {
     /// <summary>
-    /// Identifies the PRONOM format(s) whose header matches the leading bytes of a
-    /// file, including formats PRONOM only fully confirms by checking a trailer near
-    /// the end of the file (PNG, JPEG, GIF, and a plain PDF/ZIP among them - see
-    /// docs/adr/0017), since that check can't be done from a leading-bytes buffer at
-    /// all. This is the practical default for a quick "what kind of file is this"
-    /// guess from a partial read; a match here is not guaranteed to also be reported
-    /// by <see cref="Investigate(ReadOnlySpan{byte})"/> against the same file's
-    /// complete bytes - a truncated or corrupted file could pass the header check
-    /// here and still fail there. Where a format's header happens to be identical to
-    /// another cataloged format's (TIFF vs. its Digital Negative variant, GIF vs. an
-    /// unrelated format that happens to share its magic bytes, ...), both are
-    /// reported as a tie here rather than one being silently preferred - see
-    /// docs/adr/0001 for why ties are returned rather than resolved.
+    /// A quick answer from the start of a file. Only the header part of each signature is
+    /// checked; any trailer check near the end of the file is skipped.
     /// </summary>
+    /// <remarks>
+    /// This is what lets <c>Spy</c> report formats such as PNG, JPEG, GIF, PDF and ZIP from
+    /// a partial read, since PRONOM only fully confirms those by their trailer; such a match
+    /// has <see cref="Dossier.Match"/> <see cref="Match.Partial"/>. The cost is
+    /// that a truncated or corrupt file can match here and then not match
+    /// <see cref="Investigate(ReadOnlySpan{byte})"/>. ZIP and OLE2 files are not opened, so
+    /// docx, xlsx, doc, xls and similar get a less specific answer than <c>Investigate</c> gives.
+    /// </remarks>
     /// <param name="bytes">
-    /// The start of the file. Supplying fewer bytes never produces a wrong answer,
-    /// only a less specific one - PRONOM signatures probe anywhere from the first
-    /// byte to (rarely) tens of thousands of bytes in, so there's no small fixed
-    /// count that reaches all of them. Unlike <see cref="Spy(Stream)"/>, this overload
-    /// always treats <paramref name="bytes"/> as a possibly-partial buffer (skipping
-    /// EOF/container confirmation) - a caller who knows they hold the complete file
-    /// already knows that, and should call <see cref="Investigate(ReadOnlySpan{byte})"/>
-    /// directly rather than have this method try to infer it.
+    /// The start of the file. Fewer bytes give a less specific answer, never a wrong one.
+    /// If you have the whole file, call <see cref="Investigate(ReadOnlySpan{byte})"/> instead.
     /// </param>
     IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes);
 
     /// <summary>
-    /// Identifies the PRONOM format(s) whose header matches the leading bytes of
-    /// <paramref name="stream"/> - or, when <paramref name="stream"/> reports (via
-    /// <see cref="Stream.Length"/>) that it's small enough to be cheap to read in
-    /// full, this reads the whole thing and returns <see cref="Investigate(Stream)"/>'s
-    /// fully-confirmed answer instead. That's gated on the stream's own reported
-    /// length - a fact known before reading a single byte - rather than trying
-    /// <see cref="Investigate(Stream)"/> and detecting whether it "worked": a truncated
-    /// file doesn't reliably fail in a way that's safe to detect after the fact (see
-    /// docs/adr/0019). A non-seekable stream, or one larger than that threshold,
-    /// falls back to a bounded peek exactly like <see cref="Spy(ReadOnlySpan{byte})"/>.
+    /// A quick answer from the start of <paramref name="stream"/>, or the full
+    /// <see cref="Investigate(Stream)"/> answer if the stream is seekable and no longer than 8 MiB.
     /// </summary>
+    /// <remarks>
+    /// A non-seekable or larger stream has its first 64 KiB read and checked as
+    /// <see cref="Spy(ReadOnlySpan{byte})"/> does.
+    /// </remarks>
     /// <param name="stream">
-    /// The stream to read from - the whole thing if cheap to, otherwise only a
-    /// bounded prefix (see this method's own summary). The stream is the whole
-    /// file, so a seekable stream must be at position 0. A non-seekable stream is
-    /// read from wherever it is. Either way the stream is left open, at wherever
-    /// reading stopped - set <see cref="Stream.Position"/> back to 0 before reading
-    /// it again.
+    /// The whole file. A seekable stream must be at position 0; a non-seekable one is read
+    /// from where it is. The stream is left open, positioned wherever reading stopped.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="stream"/> is seekable but isn't at position 0.</exception>
     IReadOnlyList<Dossier> Spy(Stream stream);
 
-    /// <summary>
-    /// Asynchronously identifies the PRONOM format(s) whose header matches the leading bytes of <paramref name="stream"/>.
-    /// </summary>
-    /// <param name="stream">Read the same way, and for the same reason, as <see cref="Spy(Stream)"/> - see that overload's own doc.</param>
-    /// <param name="cancellationToken">Cancels the pending read from <paramref name="stream"/>.</param>
+    /// <summary>The asynchronous form of <see cref="Spy(Stream)"/>.</summary>
+    /// <param name="stream">As for <see cref="Spy(Stream)"/>.</param>
+    /// <param name="cancellationToken">Cancels the pending read.</param>
     /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="stream"/> is seekable but isn't at position 0.</exception>
     Task<IReadOnlyList<Dossier>> SpyAsync(Stream stream, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Identifies the PRONOM format(s) matching a complete file, including - unlike
-    /// <see cref="Spy(ReadOnlySpan{byte})"/> - signatures anchored to the end of
-    /// the file and PRONOM's container-signature disambiguation of ZIP/OLE2
-    /// sub-formats (docx/xlsx/doc/xls/jar/odt and the like resolve to their specific
-    /// PUID here, not just the generic ZIP/OLE2 one). This trusts that
-    /// <paramref name="bytes"/> is genuinely the complete file - it does not, and
-    /// cannot, verify that. A truncated buffer is treated as if its end were the
-    /// file's real end: an EOF-anchored signature check against it usually just
-    /// fails to find what it's looking for (a safe, if less specific, answer), but
-    /// isn't guaranteed to - see docs/adr/0019. Pass a merely-partial buffer to
-    /// <see cref="Spy(ReadOnlySpan{byte})"/> instead.
+    /// A confirmed answer from a complete file. Header and trailer checks both run, and ZIP
+    /// and OLE2 containers are opened to tell docx, xlsx, pptx, doc, xls, jar, odt and similar
+    /// apart from each other and from a plain ZIP or OLE2 file.
     /// </summary>
+    /// <remarks>
+    /// The bytes are taken to be the complete file; this can't be verified. A truncated
+    /// buffer usually just gives a less specific answer, but isn't guaranteed to. For a
+    /// partial read, use <see cref="Spy(ReadOnlySpan{byte})"/>.
+    /// </remarks>
     /// <param name="bytes">
-    /// The complete file content, not just its leading bytes. This overload copies
-    /// <paramref name="bytes"/> once, up front, into an array it can keep (a
-    /// <see cref="ReadOnlySpan{T}"/> can't be captured past the call that provides
-    /// it), and reads only that copy from then on - so peak memory here is about
-    /// twice the file's size. For a file that isn't already in memory, prefer
-    /// <see cref="Investigate(Stream)"/>, whose memory use doesn't grow with the file.
+    /// The complete file. It is copied once, so peak memory is about twice the file's size.
+    /// For a file not already in memory, <see cref="Investigate(Stream)"/> uses far less.
     /// </param>
     IReadOnlyList<Dossier> Investigate(ReadOnlySpan<byte> bytes);
 
     /// <summary>
-    /// Identifies the PRONOM format(s) matching the complete content of
-    /// <paramref name="stream"/> - with the
-    /// same EOF and container checks as <see cref="Investigate(ReadOnlySpan{byte})"/>,
-    /// but without reading the whole stream into memory. A stream of 16 MiB or less
-    /// is read whole. A larger one has only 8 MiB read from each end for signature
-    /// matching, plus whatever parts a ZIP/OLE2 container check needs (its directory
-    /// and the entries PRONOM names), read in place. Peak memory therefore stays
-    /// around 16 MiB, plus the size of any container entries checked, however large
-    /// the file is - a 50 GB file costs about the same as a 20 MB one. The one
-    /// thing given up on a stream over 16 MiB: a handful of
-    /// PRONOM signatures that search for a marker with no fixed distance from either
-    /// end of the file only search the first 8 MiB, so a marker further in than that
-    /// is missed and a less specific match is reported instead (see docs/adr/0022).
+    /// A confirmed answer from a complete file, as <see cref="Investigate(ReadOnlySpan{byte})"/>,
+    /// without reading the whole stream into memory.
     /// </summary>
+    /// <remarks>
+    /// A stream up to 16 MiB is read whole. A larger one has 8 MiB read from each end, plus
+    /// the parts of a ZIP/OLE2 container that the container check needs, read in place. Peak
+    /// memory is therefore about 16 MiB plus the size of any container entries checked,
+    /// however large the file. On a file over 16 MiB, the few PRONOM signatures that search
+    /// for a marker at no fixed distance from either end only search the first 8 MiB, so a
+    /// marker further in is missed and a less specific match is reported.
+    /// </remarks>
     /// <param name="stream">
-    /// A seekable stream (<see cref="Stream.CanSeek"/>) at position 0 - the whole
-    /// stream is the file. For a non-seekable source (a network or pipe stream),
-    /// copy it into a <see cref="MemoryStream"/> or a temporary
-    /// <see cref="FileStream"/> first - whichever suits its size - or pass its bytes
-    /// to <see cref="Investigate(ReadOnlySpan{byte})"/>. The stream is left open, at
-    /// wherever reading stopped - set <see cref="Stream.Position"/> back to 0 before
-    /// reading it again.
+    /// The whole file: seekable and at position 0. Copy a non-seekable source into a
+    /// <see cref="MemoryStream"/> or a temporary <see cref="FileStream"/> first. The stream
+    /// is left open, positioned wherever reading stopped.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="stream"/> isn't seekable, or isn't at position 0.</exception>
     IReadOnlyList<Dossier> Investigate(Stream stream);
 
-    /// <summary>
-    /// Asynchronously identifies the PRONOM format(s) matching the complete content of <paramref name="stream"/>.
-    /// </summary>
+    /// <summary>The asynchronous form of <see cref="Investigate(Stream)"/>.</summary>
     /// <remarks>
-    /// The signature-matching reads are asynchronous. On a stream over 16 MiB that
-    /// turns out to be a ZIP/OLE2 container, the container check that follows reads
-    /// <paramref name="stream"/> synchronously.
+    /// On a stream over 16 MiB that turns out to be a ZIP/OLE2 container, the container
+    /// check that follows the signature match reads synchronously.
     /// </remarks>
-    /// <param name="stream">Read the same way, and with the same seekable, position-0 requirement, as <see cref="Investigate(Stream)"/> - see that overload's own doc.</param>
-    /// <param name="cancellationToken">Cancels the pending signature-matching reads from <paramref name="stream"/>.</param>
+    /// <param name="stream">As for <see cref="Investigate(Stream)"/>.</param>
+    /// <param name="cancellationToken">Cancels the pending signature-matching reads.</param>
     /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="stream"/> isn't seekable, or isn't at position 0.</exception>
     Task<IReadOnlyList<Dossier>> InvestigateAsync(Stream stream, CancellationToken cancellationToken = default);

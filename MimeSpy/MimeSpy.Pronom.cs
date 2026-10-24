@@ -10,10 +10,8 @@ public sealed partial class MimeSpy : IMimeSpy
     {
     }
 
-    /// <summary>
-    /// Considers only formats matching <paramref name="options"/> - see
-    /// <see cref="MimeSpyOptions.MimeTypes"/>. Built once here, not per call.
-    /// </summary>
+    /// <summary>Considers only the formats <paramref name="options"/> selects.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is null.</exception>
     public MimeSpy(MimeSpyOptions options)
     {
         if (options is null)
@@ -21,7 +19,7 @@ public sealed partial class MimeSpy : IMimeSpy
             throw new ArgumentNullException(nameof(options));
         }
 
-        if (options.MimeTypes.Count > 0)
+        if (options.MimeTypes.Count > 0 || options.ExcludedMimeTypes.Count > 0)
         {
             _filter = PronomFormatFilter.Build(options);
         }
@@ -51,7 +49,7 @@ public sealed partial class MimeSpy : IMimeSpy
     private const int InvestigateWindowSize = 8 * 1024 * 1024;
 
     /// <inheritdoc/>
-    public IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes, _filter));
+    public IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindHeaderMatches(bytes, _filter));
 
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Spy(Stream stream)
@@ -208,20 +206,41 @@ public sealed partial class MimeSpy : IMimeSpy
     // head/tail are the file's two ends (the same span when it's all in memory);
     // file is the whole file, from position 0, for the container readers.
     private IReadOnlyList<Dossier> InvestigateCore(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, Stream file) =>
-        ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindMatchesFull(head, tail, _filter)));
+        ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindFullMatches(head, tail, _filter), _filter));
 
-    private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomFileFormat> formats) =>
-        formats.Count == 0 ? [] : [.. formats.Select(f => new Dossier(f.Puid, f.Name, f.Version, f.MimeType, f.Extensions))];
+    private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomMatch> matches) =>
+        matches.Count == 0 ? [] : [.. matches.Select(m => new Dossier(m.Format.Puid, m.Format.Name, m.Format.Version, m.Format.MimeTypes, m.Format.Extensions, m.Match))];
 }
 
-/// <summary>
-/// Everything PRONOM knows about one format that matched, from
-/// <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/> or <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/>
-/// (and their overloads).
-/// </summary>
-/// <param name="Puid">The PRONOM Unique Identifier (e.g. <c>"fmt/412"</c>, <c>"x-fmt/263"</c>) - PRONOM's own stable format key.</param>
-/// <param name="Name">The format's name, as PRONOM records it (e.g. <c>"Microsoft Word for Windows"</c>).</param>
-/// <param name="Version">The format's version, if PRONOM records one for this PUID specifically (distinct PUIDs usually exist per version instead).</param>
-/// <param name="MimeType">The MIME type PRONOM associates with this format, if any - not every PRONOM format has one.</param>
-/// <param name="Extensions">File extensions associated with this format.</param>
-public sealed record Dossier(string Puid, string Name, string? Version, string? MimeType, IReadOnlyList<string> Extensions);
+/// <summary>One format that matched, as PRONOM records it.</summary>
+/// <param name="Puid">PRONOM's stable identifier for the format, e.g. <c>"fmt/412"</c>.</param>
+/// <param name="Name">The format's name, e.g. <c>"Microsoft Word for Windows"</c>.</param>
+/// <param name="Version">The format's version, if PRONOM records one.</param>
+/// <param name="MimeTypes">
+/// The format's MIME types, in the order PRONOM lists them. For a few common formats PRONOM
+/// gives none, MimeSpy supplies the conventional type. Empty if there is none.
+/// </param>
+/// <param name="Extensions">File extensions associated with the format.</param>
+/// <param name="Match">Whether every part of the format's signature was checked against the file.</param>
+public sealed record Dossier(string Puid, string Name, string? Version, IReadOnlyList<string> MimeTypes, IReadOnlyList<string> Extensions, Match Match = Match.Full)
+{
+    /// <summary>
+    /// The first of <see cref="MimeTypes"/>, or null if there are none. Where PRONOM lists
+    /// several, they are in alphabetical order, not by preference.
+    /// </summary>
+    public string? MimeType => MimeTypes.Count > 0 ? MimeTypes[0] : null;
+}
+
+/// <summary>How much of a format's signature was checked against the file.</summary>
+public enum Match
+{
+    /// <summary>Every part of the signature was checked and matched.</summary>
+    Full,
+
+    /// <summary>
+    /// Only the signature's start-of-file part was checked. <c>Spy</c> skips any check at
+    /// the end of the file, so the bytes are consistent with this format but haven't been
+    /// shown to be it. <c>Investigate</c> never returns a partial match.
+    /// </summary>
+    Partial,
+}

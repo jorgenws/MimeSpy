@@ -116,14 +116,14 @@ public class MimeSpyTests
 
     [Theory]
     [MemberData(nameof(StreamMethods))]
-    public void Stream_SeekableStream_RestoresOriginalPosition(StreamMethod method)
+    public void Stream_SeekableStreamNotAtStart_Throws(StreamMethod method)
     {
-        using var stream = new MemoryStream(PdfHeaderOnly);
-        stream.Position = 3;
+        // E.g. a MemoryStream just written to and not rewound - reading on from its
+        // current position would inspect the wrong bytes (here, none at all).
+        using var stream = new MemoryStream(WavBytes);
+        stream.Position = stream.Length;
 
-        method.Invoke(_sut, stream);
-
-        Assert.Equal(3, stream.Position);
+        Assert.Throws<ArgumentException>(() => method.Invoke(_sut, stream));
     }
 
     [Theory]
@@ -151,6 +151,16 @@ public class MimeSpyTests
     public void StreamAsync_NullStream_Throws(AsyncStreamMethod method)
     {
         Assert.Throws<ArgumentNullException>(() => { _ = method.Invoke(_sut, null!, TestContext.Current.CancellationToken); });
+    }
+
+    [Theory]
+    [MemberData(nameof(AsyncStreamMethods))]
+    public void StreamAsync_SeekableStreamNotAtStart_Throws(AsyncStreamMethod method)
+    {
+        using var stream = new MemoryStream(WavBytes);
+        stream.Position = stream.Length;
+
+        Assert.Throws<ArgumentException>(() => { _ = method.Invoke(_sut, stream, TestContext.Current.CancellationToken); });
     }
 
     [Theory]
@@ -205,6 +215,51 @@ public class MimeSpyTests
         Assert.Equal(
             viaSpyBytes.Select(f => f.Puid).OrderBy(p => p),
             viaSpyStream.Select(f => f.Puid).OrderBy(p => p));
+    }
+
+    // Investigate(Stream)'s seekable-only contract and windowed reads (docs/adr/0022).
+
+    public static TheoryData<StreamMethod> InvestigateStreamMethods => new()
+    {
+        new StreamMethod("Investigate", (sut, stream) => sut.Investigate(stream)),
+        new StreamMethod("InvestigateAsync", (sut, stream) => sut.InvestigateAsync(stream).GetAwaiter().GetResult()),
+    };
+
+    [Theory]
+    [MemberData(nameof(InvestigateStreamMethods))]
+    public void Investigate_NonSeekableStream_Throws(StreamMethod method)
+    {
+        using var nonSeekable = new NonSeekableStream(new MemoryStream(WavBytes));
+
+        Assert.Throws<ArgumentException>(() => method.Invoke(_sut, nonSeekable));
+    }
+
+
+    public static TheoryData<string, string> EofAnchoredFixtures => new()
+    {
+        { "sample.pdf", "pdf" },
+        { "sample.png", "png" },
+        { "sample.gif", "gif" },
+    };
+
+    [Theory]
+    [MemberData(nameof(EofAnchoredFixtures))]
+    public void Investigate_StreamTooLargeToReadWhole_StillChecksTheRealTrailer(string fileName, string expectedExtension)
+    {
+        // Padding the middle pushes the file past where Investigate(Stream) stops
+        // reading it whole, so the trailer is only seen through the tail window -
+        // offsets in it have to line up with the file's real end for the match to hold.
+        var original = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
+        var half = original.Length / 2;
+        byte[] padded = [.. original.AsSpan(0, half), .. new byte[17 * 1024 * 1024], .. original.AsSpan(half)];
+        using var stream = new MemoryStream(padded);
+
+        var viaStream = _sut.Investigate(stream);
+
+        Assert.Contains(viaStream, f => f.Extensions.Contains(expectedExtension));
+        Assert.Equal(
+            _sut.Investigate(padded).Select(f => f.Puid).OrderBy(p => p),
+            viaStream.Select(f => f.Puid).OrderBy(p => p));
     }
 
     public sealed record SpanMethod(string Name, Func<MimeSpy, ReadOnlySpan<byte>, IReadOnlyList<Dossier>> Invoke)

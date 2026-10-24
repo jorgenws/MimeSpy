@@ -5,10 +5,11 @@ namespace MimeSpy;
 /// <summary>
 /// A minimal read-only MS-CFB (Compound File Binary Format,
 /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) reader for
-/// the container signature engine: given the complete bytes of an OLE2 file, resolves
-/// a (possibly nested, e.g. <c>"Document/Page1"</c>) stream path to its full content.
-/// Never copies the array it's given (see <see cref="TryOpen"/>'s own doc) - a large
-/// file is held once, not once per reader that opens it.
+/// the container signature engine: given a seekable stream over a complete OLE2 file,
+/// resolves a (possibly nested, e.g. <c>"Document/Page1"</c>) stream path to its full
+/// content. Reads the stream in place, sector by sector - only the header, the
+/// directory, the FAT sectors it needs, and the streams actually asked for are ever
+/// read, never the whole file.
 ///
 /// Unlike a flat directory-entry-name lookup - which only needs the *names*,
 /// and so skips both stream content and the directory's red-black tree structure
@@ -33,15 +34,21 @@ internal sealed class PronomOle2ContainerReader
 
     private static readonly byte[] Signature = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 
-    private readonly byte[] _bytes;
-    private readonly int _length;
+    private readonly Stream _stream;
+    private readonly long _length;
     private readonly int _sectorSize;
     private readonly uint[] _difat;
     private readonly uint _firstMiniFatSector;
     private readonly uint _miniFatSectorCount;
     private readonly ulong _miniStreamCutoff;
-    private readonly List<DirectoryEntry> _entries;
-    private readonly int _rootIndex;
+
+    // Each FAT sector holds the next-pointers for sectorSize/4 consecutive sectors,
+    // so it's read once and kept rather than re-read per pointer followed - indexed
+    // like _difat, so at most DifatEntryCount of them (see the class doc).
+    private readonly byte[]?[] _fatSectors = new byte[DifatEntryCount][];
+
+    private List<DirectoryEntry> _entries = [];
+    private int _rootIndex;
 
     private byte[]? _miniFat;
     private byte[]? _miniStream;
@@ -56,59 +63,52 @@ internal sealed class PronomOle2ContainerReader
 
     private readonly record struct DirectoryEntry(string Name, byte ObjectType, uint Left, uint Right, uint Child, uint StartSector, ulong StreamSize);
 
-    private PronomOle2ContainerReader(byte[] bytes, int length, int sectorSize, uint[] difat, uint firstMiniFatSector, uint miniFatSectorCount, ulong miniStreamCutoff, List<DirectoryEntry> entries, int rootIndex)
+    private PronomOle2ContainerReader(Stream stream, int sectorSize, uint[] difat, uint firstMiniFatSector, uint miniFatSectorCount, ulong miniStreamCutoff)
     {
-        _bytes = bytes;
-        _length = length;
+        _stream = stream;
+        _length = stream.Length;
         _sectorSize = sectorSize;
         _difat = difat;
         _firstMiniFatSector = firstMiniFatSector;
         _miniFatSectorCount = miniFatSectorCount;
         _miniStreamCutoff = miniStreamCutoff;
-        _entries = entries;
-        _rootIndex = rootIndex;
     }
 
     /// <summary>
-    /// Opens an OLE2 file's <paramref name="length"/> logical bytes, backed by
-    /// <paramref name="bytes"/> - which the reader never copies, but which may
-    /// itself be larger than <paramref name="length"/> (e.g. a growable buffer's
-    /// backing array), so every bounds check is against <paramref name="length"/>,
-    /// never <c>bytes.Length</c>.
+    /// Opens the OLE2 file that is the whole of <paramref name="stream"/> (which must
+    /// be seekable, with position 0 at the file's first byte). The reader moves the
+    /// stream's position as it reads and doesn't restore it.
     /// </summary>
-    public static PronomOle2ContainerReader? TryOpen(byte[] bytes, int length)
+    public static PronomOle2ContainerReader? TryOpen(Stream stream)
     {
-        if (length < HeaderSize || !bytes.AsSpan(0, 8).SequenceEqual(Signature))
+        var header = new byte[HeaderSize];
+        if (!TryReadAt(stream, stream.Length, 0, header, HeaderSize) || !header.AsSpan(0, 8).SequenceEqual(Signature))
         {
             return null;
         }
 
-        var sectorShift = ReadUInt16(bytes, 30);
+        var sectorShift = ReadUInt16(header, 30);
         if (sectorShift is not (9 or 12))
         {
             return null;
         }
 
         var sectorSize = 1 << sectorShift;
-        var firstDirectorySector = ReadUInt32(bytes, 48);
-        var miniStreamCutoff = ReadUInt32(bytes, 56);
-        var firstMiniFatSector = ReadUInt32(bytes, 60);
-        var miniFatSectorCount = ReadUInt32(bytes, 64);
+        var firstDirectorySector = ReadUInt32(header, 48);
+        var miniStreamCutoff = ReadUInt32(header, 56);
+        var firstMiniFatSector = ReadUInt32(header, 60);
+        var miniFatSectorCount = ReadUInt32(header, 64);
 
         var difat = new uint[DifatEntryCount];
         for (var i = 0; i < DifatEntryCount; i++)
         {
-            difat[i] = ReadUInt32(bytes, 76 + (i * 4));
+            difat[i] = ReadUInt32(header, 76 + (i * 4));
         }
 
-        var entries = ReadDirectoryEntries(bytes, length, sectorSize, difat, firstDirectorySector);
-        var rootIndex = entries.FindIndex(e => e.ObjectType == 5);
-        if (rootIndex < 0)
-        {
-            return null;
-        }
-
-        return new PronomOle2ContainerReader(bytes, length, sectorSize, difat, firstMiniFatSector, miniFatSectorCount, miniStreamCutoff, entries, rootIndex);
+        var reader = new PronomOle2ContainerReader(stream, sectorSize, difat, firstMiniFatSector, miniFatSectorCount, miniStreamCutoff);
+        reader._entries = reader.ReadDirectoryEntries(firstDirectorySector);
+        reader._rootIndex = reader._entries.FindIndex(e => e.ObjectType == 5);
+        return reader._rootIndex < 0 ? null : reader;
     }
 
     /// <summary>
@@ -185,27 +185,27 @@ internal sealed class PronomOle2ContainerReader
         return FindChild(entry.Left, name) ?? FindChild(entry.Right, name);
     }
 
-    private static List<DirectoryEntry> ReadDirectoryEntries(byte[] bytes, int length, int sectorSize, uint[] difat, uint firstDirectorySector)
+    private List<DirectoryEntry> ReadDirectoryEntries(uint firstDirectorySector)
     {
         var entries = new List<DirectoryEntry>();
         var visited = new HashSet<uint>();
+        var sectorBytes = new byte[_sectorSize];
         var sector = firstDirectorySector;
 
         while (sector < MinReservedSector && visited.Add(sector))
         {
-            var offset = SectorByteOffset(sector, sectorSize);
-            if (offset < 0 || offset + sectorSize > length)
+            if (!TryReadAt(_stream, _length, SectorByteOffset(sector, _sectorSize), sectorBytes, _sectorSize))
             {
                 break;
             }
 
-            var entriesInSector = sectorSize / DirectoryEntrySize;
+            var entriesInSector = _sectorSize / DirectoryEntrySize;
             for (var i = 0; i < entriesInSector; i++)
             {
-                entries.Add(ParseDirectoryEntry(bytes, (int)offset + (i * DirectoryEntrySize)));
+                entries.Add(ParseDirectoryEntry(sectorBytes, i * DirectoryEntrySize));
             }
 
-            if (!TryGetNextSector(bytes, length, sectorSize, difat, sector, out sector))
+            if (!TryGetNextSector(sector, out sector))
             {
                 break;
             }
@@ -240,10 +240,17 @@ internal sealed class PronomOle2ContainerReader
             return [];
         }
 
+        // A stream can't be bigger than the file holding it - checked before
+        // allocating, so a corrupt size field can't ask for an absurd buffer.
+        if (length > _length)
+        {
+            return null;
+        }
+
         var result = new byte[length];
         var sector = startSector;
         var visited = new HashSet<uint>();
-        long written = 0;
+        var written = 0;
 
         while (written < length)
         {
@@ -253,16 +260,20 @@ internal sealed class PronomOle2ContainerReader
             }
 
             var offset = SectorByteOffset(sector, _sectorSize);
-            if (offset < 0 || offset + _sectorSize > _length)
+            if (offset + _sectorSize > _length)
             {
                 return null;
             }
 
             var toCopy = (int)Math.Min(_sectorSize, length - written);
-            Array.Copy(_bytes, offset, result, written, toCopy);
+            if (!TryReadAt(_stream, _length, offset, result, toCopy, written))
+            {
+                return null;
+            }
+
             written += toCopy;
 
-            if (written >= length || !TryGetNextSector(_bytes, _length, _sectorSize, _difat, sector, out sector))
+            if (written >= length || !TryGetNextSector(sector, out sector))
             {
                 break;
             }
@@ -279,7 +290,7 @@ internal sealed class PronomOle2ContainerReader
         }
 
         var miniStream = GetMiniStream();
-        if (miniStream is null)
+        if (miniStream is null || length > miniStream.Length)
         {
             return null;
         }
@@ -336,32 +347,64 @@ internal sealed class PronomOle2ContainerReader
         return fat is null || offset < 0 || offset + 4 > fat.Length ? MinReservedSector : ReadUInt32(fat, (int)offset);
     }
 
-    private static bool TryGetNextSector(byte[] bytes, int length, int sectorSize, uint[] difat, uint sector, out uint next)
+    private bool TryGetNextSector(uint sector, out uint next)
     {
         next = 0;
 
-        var entriesPerFatSector = (uint)(sectorSize / 4);
+        var entriesPerFatSector = (uint)(_sectorSize / 4);
         var fatSectorIndex = sector / entriesPerFatSector;
-        if (fatSectorIndex >= (uint)difat.Length)
+        if (fatSectorIndex >= (uint)_difat.Length || GetFatSector(fatSectorIndex) is not { } fatSector)
         {
             return false;
         }
 
-        var fatSector = difat[fatSectorIndex];
+        var entryOffset = (int)(sector % entriesPerFatSector) * 4;
+        if (entryOffset + 4 > fatSector.Length)
+        {
+            return false;
+        }
+
+        next = ReadUInt32(fatSector, entryOffset);
+        return true;
+    }
+
+    // A FAT sector cut short by the end of the file keeps whatever part of it is
+    // there - entries in that part are still usable, only ones past the end aren't.
+    private byte[]? GetFatSector(uint fatSectorIndex)
+    {
+        if (_fatSectors[fatSectorIndex] is { } cached)
+        {
+            return cached;
+        }
+
+        var fatSector = _difat[fatSectorIndex];
         if (fatSector >= MinReservedSector)
         {
-            return false;
+            return null;
         }
 
-        var fatSectorOffset = SectorByteOffset(fatSector, sectorSize);
-        var entryOffset = fatSectorOffset + ((sector % entriesPerFatSector) * 4);
-        if (entryOffset < 0 || entryOffset + 4 > length)
+        var offset = SectorByteOffset(fatSector, _sectorSize);
+        var available = (int)Math.Min(_sectorSize, _length - offset);
+        if (available <= 0)
+        {
+            return null;
+        }
+
+        var buffer = new byte[available];
+        return TryReadAt(_stream, _length, offset, buffer, available) ? _fatSectors[fatSectorIndex] = buffer : null;
+    }
+
+    // Reads exactly count bytes at offset into buffer[bufferOffset..], or reports
+    // false if any of them fall outside the file's length bytes.
+    private static bool TryReadAt(Stream stream, long length, long offset, byte[] buffer, int count, int bufferOffset = 0)
+    {
+        if (offset < 0 || offset + count > length)
         {
             return false;
         }
 
-        next = ReadUInt32(bytes, (int)entryOffset);
-        return true;
+        stream.Position = offset;
+        return StreamReading.Fill(stream, buffer, bufferOffset, count) == count;
     }
 
     // Sector 0 starts right after the fixed-size header, regardless of the header's

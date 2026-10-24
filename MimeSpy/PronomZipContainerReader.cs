@@ -3,15 +3,14 @@ using System.IO.Compression;
 namespace MimeSpy;
 
 /// <summary>
-/// Reads named entries out of a ZIP file's full bytes on behalf of the container
-/// signature engine, via the framework's own <see cref="ZipArchive"/> (which reads
-/// the central directory at the end of the file, so this only ever makes sense
-/// against the complete file, never a leading prefix). Never copies the array it's
-/// given (see <see cref="TryOpen"/>'s own doc).
+/// Reads named entries out of a ZIP file on behalf of the container signature
+/// engine, via the framework's own <see cref="ZipArchive"/> (which seeks to the
+/// central directory at the end of the file, so this only ever makes sense against
+/// the complete file, never a leading prefix). Reads the stream it's given in place
+/// - only the central directory and the entries actually asked for are ever read.
 /// </summary>
 internal sealed class PronomZipContainerReader : IDisposable
 {
-    private readonly MemoryStream _stream;
     private readonly ZipArchive _archive;
 
     // PronomContainerMatcher tries every ZIP container signature PRONOM has (not just
@@ -22,28 +21,24 @@ internal sealed class PronomZipContainerReader : IDisposable
     // that asks for it.
     private readonly Dictionary<string, byte[]?> _entryCache = new(StringComparer.Ordinal);
 
-    private PronomZipContainerReader(MemoryStream stream, ZipArchive archive)
+    private PronomZipContainerReader(ZipArchive archive)
     {
-        _stream = stream;
         _archive = archive;
     }
 
     /// <summary>
-    /// Opens the ZIP file whose bytes are <paramref name="bytes"/>'s first
-    /// <paramref name="length"/> bytes - which are never copied, only wrapped, even
-    /// when <paramref name="bytes"/> is itself larger (e.g. a growable buffer's
-    /// backing array).
+    /// Opens the ZIP file that is the whole of <paramref name="stream"/> (which must
+    /// be seekable, with position 0 at the file's first byte). The stream is left
+    /// open when this reader is disposed - it belongs to the caller.
     /// </summary>
-    public static PronomZipContainerReader? TryOpen(byte[] bytes, int length)
+    public static PronomZipContainerReader? TryOpen(Stream stream)
     {
-        var stream = new MemoryStream(bytes, 0, length, writable: false);
         try
         {
-            return new PronomZipContainerReader(stream, new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true));
+            return new PronomZipContainerReader(new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true));
         }
         catch (InvalidDataException)
         {
-            stream.Dispose();
             return null;
         }
     }
@@ -75,9 +70,5 @@ internal sealed class PronomZipContainerReader : IDisposable
         return buffer.ToArray();
     }
 
-    public void Dispose()
-    {
-        _archive.Dispose();
-        _stream.Dispose();
-    }
+    public void Dispose() => _archive.Dispose();
 }

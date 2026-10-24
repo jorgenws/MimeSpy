@@ -1,5 +1,7 @@
 # Investigate threads one buffer through instead of copying it per reader
 
+> Superseded for the `Stream` overloads by [ADR 0022](0022-investigate-stream-requires-seeking-and-reads-bounded-windows.md) - they no longer buffer the file at all, and the container readers now take a `Stream`. `Investigate(ReadOnlySpan<byte>)` still makes the one copy described below, then hands the readers a no-copy `MemoryStream` over it.
+
 `Investigate` was built up one piece at a time - the core DROID matcher, then the
 ZIP reader, then the OLE2 reader, then `PronomContainerMatcher` tying them
 together - and each of those pieces originally took a plain

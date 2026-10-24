@@ -50,10 +50,14 @@ public interface IMimeSpy
     /// </summary>
     /// <param name="stream">
     /// The stream to read from - the whole thing if cheap to, otherwise only a
-    /// bounded prefix (see this method's own summary). If the stream is seekable,
-    /// its position is restored afterwards, so this is a peek rather than a
-    /// consume; on a non-seekable stream the read bytes are gone from it.
+    /// bounded prefix (see this method's own summary). The stream is the whole
+    /// file, so a seekable stream must be at position 0. A non-seekable stream is
+    /// read from wherever it is. Either way the stream is left open, at wherever
+    /// reading stopped - set <see cref="Stream.Position"/> back to 0 before reading
+    /// it again.
     /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> is seekable but isn't at position 0.</exception>
     IReadOnlyList<Dossier> Spy(Stream stream);
 
     /// <summary>
@@ -61,6 +65,8 @@ public interface IMimeSpy
     /// </summary>
     /// <param name="stream">Read the same way, and for the same reason, as <see cref="Spy(Stream)"/> - see that overload's own doc.</param>
     /// <param name="cancellationToken">Cancels the pending read from <paramref name="stream"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> is seekable but isn't at position 0.</exception>
     Task<IReadOnlyList<Dossier>> SpyAsync(Stream stream, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -77,38 +83,54 @@ public interface IMimeSpy
     /// <see cref="Spy(ReadOnlySpan{byte})"/> instead.
     /// </summary>
     /// <param name="bytes">
-    /// The complete file content, not just its leading bytes. This method needs no
-    /// more memory than <paramref name="bytes"/> itself already occupies - the same
-    /// array is read from directly throughout, including by the ZIP/OLE2 readers
-    /// behind container-signature disambiguation, never copied again internally (see
-    /// docs/adr/0018). Only <see cref="Investigate(ReadOnlySpan{byte})"/> itself has to
-    /// copy once, up front, into an array it can keep: a <see cref="ReadOnlySpan{T}"/>
-    /// can't be captured past the call that provides it, so there's nothing to reuse.
-    /// A caller choosing between this and <see cref="Spy(ReadOnlySpan{byte})"/> based
-    /// on a file's size - a reasonable policy this library deliberately leaves to the
-    /// caller, since the right threshold depends on constraints only the caller knows
-    /// (available memory, concurrent load, latency budget) - can treat "peak memory
-    /// here" as approximately equal to the file's own size.
+    /// The complete file content, not just its leading bytes. This overload copies
+    /// <paramref name="bytes"/> once, up front, into an array it can keep (a
+    /// <see cref="ReadOnlySpan{T}"/> can't be captured past the call that provides
+    /// it), and reads only that copy from then on - so peak memory here is about
+    /// twice the file's size. For a file that isn't already in memory, prefer
+    /// <see cref="Investigate(Stream)"/>, whose memory use doesn't grow with the file.
     /// </param>
     IReadOnlyList<Dossier> Investigate(ReadOnlySpan<byte> bytes);
 
     /// <summary>
-    /// Identifies the PRONOM format(s) matching the complete content of <paramref name="stream"/>.
+    /// Identifies the PRONOM format(s) matching the complete content of
+    /// <paramref name="stream"/> - with the
+    /// same EOF and container checks as <see cref="Investigate(ReadOnlySpan{byte})"/>,
+    /// but without reading the whole stream into memory. A stream of 16 MiB or less
+    /// is read whole. A larger one has only 8 MiB read from each end for signature
+    /// matching, plus whatever parts a ZIP/OLE2 container check needs (its directory
+    /// and the entries PRONOM names), read in place. Peak memory therefore stays
+    /// around 16 MiB, plus the size of any container entries checked, however large
+    /// the file is - a 50 GB file costs about the same as a 20 MB one. The one
+    /// thing given up on a stream over 16 MiB: a handful of
+    /// PRONOM signatures that search for a marker with no fixed distance from either
+    /// end of the file only search the first 8 MiB, so a marker further in than that
+    /// is missed and a less specific match is reported instead (see docs/adr/0022).
     /// </summary>
     /// <param name="stream">
-    /// The stream to read to its end (see <see cref="Investigate(ReadOnlySpan{byte})"/> for
-    /// why the whole thing, unlike <see cref="Spy(Stream)"/> - and for this
-    /// overload's own memory cost, which is the same: reading a stream instead of an
-    /// already-in-memory span doesn't add a second copy on top of it). If the stream
-    /// is seekable, its position is restored afterwards, so this is a peek rather
-    /// than a consume; on a non-seekable stream the read bytes are gone from it.
+    /// A seekable stream (<see cref="Stream.CanSeek"/>) at position 0 - the whole
+    /// stream is the file. For a non-seekable source (a network or pipe stream),
+    /// copy it into a <see cref="MemoryStream"/> or a temporary
+    /// <see cref="FileStream"/> first - whichever suits its size - or pass its bytes
+    /// to <see cref="Investigate(ReadOnlySpan{byte})"/>. The stream is left open, at
+    /// wherever reading stopped - set <see cref="Stream.Position"/> back to 0 before
+    /// reading it again.
     /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> isn't seekable, or isn't at position 0.</exception>
     IReadOnlyList<Dossier> Investigate(Stream stream);
 
     /// <summary>
     /// Asynchronously identifies the PRONOM format(s) matching the complete content of <paramref name="stream"/>.
     /// </summary>
-    /// <param name="stream">Read the same way, and for the same reason, as <see cref="Investigate(Stream)"/> - see that overload's own doc.</param>
-    /// <param name="cancellationToken">Cancels the pending read from <paramref name="stream"/>.</param>
+    /// <remarks>
+    /// The signature-matching reads are asynchronous. On a stream over 16 MiB that
+    /// turns out to be a ZIP/OLE2 container, the container check that follows reads
+    /// <paramref name="stream"/> synchronously.
+    /// </remarks>
+    /// <param name="stream">Read the same way, and with the same seekable, position-0 requirement, as <see cref="Investigate(Stream)"/> - see that overload's own doc.</param>
+    /// <param name="cancellationToken">Cancels the pending signature-matching reads from <paramref name="stream"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> isn't seekable, or isn't at position 0.</exception>
     Task<IReadOnlyList<Dossier>> InvestigateAsync(Stream stream, CancellationToken cancellationToken = default);
 }

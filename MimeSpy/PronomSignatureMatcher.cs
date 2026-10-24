@@ -34,7 +34,7 @@ internal static class PronomSignatureMatcher
 
     // Only signatures that could match head[0] are tried: those indexed under that byte,
     // plus the small set with no fixed first byte, which are always tried. A filter swaps
-    // in its own narrower pair of sets; nothing after candidate selection knows about it.
+    // in its own narrower pair of sets, and drops formats it doesn't allow as they match.
     private static IReadOnlyList<PronomMatch> FindMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter)
     {
         List<PronomMatch>? matches = null;
@@ -45,18 +45,18 @@ internal static class PronomSignatureMatcher
             var candidates = filter is null
                 ? PronomSignatureIndex.FindSignatureIdsByFirstByte(head[0])
                 : filter.FindSignatureIdsByFirstByte(head[0]);
-            TryMatchCandidates(candidates, head, tail, checkEof, ref matches, ref indexByFormatId);
+            TryMatchCandidates(candidates, head, tail, checkEof, filter, ref matches, ref indexByFormatId);
         }
 
         var fallback = filter?.SignatureIdsWithoutFixedFirstByte ?? PronomSignatureIndex.SignatureIdsWithoutFixedFirstByte;
-        TryMatchCandidates(fallback, head, tail, checkEof, ref matches, ref indexByFormatId);
+        TryMatchCandidates(fallback, head, tail, checkEof, filter, ref matches, ref indexByFormatId);
 
         if (matches is null)
         {
             return [];
         }
 
-        return PronomPriority.Order(PronomPriority.RemoveOutranked(matches));
+        return PronomPriority.Order(PronomPriority.RemoveOutranked(matches, filter));
     }
 
     // indexByFormatId dedupes across the two candidate sets above, and across a single
@@ -64,8 +64,9 @@ internal static class PronomSignatureMatcher
     // - a format with two alternative signatures that both match must still only appear
     // once). Without checkEof, a signature with an EOF sequence only matches partially;
     // a format is a full match if any of its matching signatures was checked in full, and
-    // otherwise remembers which EOF checks it skipped.
-    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, ref List<PronomMatch>? matches, ref Dictionary<int, int>? indexByFormatId)
+    // otherwise remembers which EOF checks it skipped. A format the filter doesn't allow
+    // is skipped even when a signature it shares with an allowed one matches.
+    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter, ref List<PronomMatch>? matches, ref Dictionary<int, int>? indexByFormatId)
     {
         for (var i = 0; i < signatureIds.Count; i++)
         {
@@ -81,6 +82,13 @@ internal static class PronomSignatureMatcher
             for (var j = 0; j < formats.Count; j++)
             {
                 var format = formats[j];
+                // With checkEof (Investigate), a disallowed container trigger is kept for
+                // PronomContainerMatcher - see PronomFormatFilter.
+                if (filter is not null && !filter.Allows(format) && !(checkEof && filter.IsContainerTrigger(format)))
+                {
+                    continue;
+                }
+
                 matches ??= [];
                 indexByFormatId ??= [];
                 if (!indexByFormatId.TryGetValue(format.Id, out var index))

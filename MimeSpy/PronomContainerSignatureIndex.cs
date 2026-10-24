@@ -71,6 +71,8 @@ internal static class PronomContainerSignatureIndex
     // for (e.g. the generic ZIP/OLE2 PUIDs themselves), null otherwise.
     public static string? FindTriggerContainerType(string puid) => ContainerTypeByTriggerPuid.TryGetValue(puid, out var containerType) ? containerType : null;
 
+    public static IEnumerable<string> TriggerPuids => ContainerTypeByTriggerPuid.Keys;
+
     private static PronomContainerSignature ParseContainerSignature(XmlReader reader)
     {
         reader.MoveToContent();

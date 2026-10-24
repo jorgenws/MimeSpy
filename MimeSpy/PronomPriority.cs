@@ -11,8 +11,9 @@ internal static class PronomPriority
     // partial match that skipped exactly the same EOF check: then the skipped check can't
     // separate them, and the checked part already did (JFIF vs Raw JPEG, both needing
     // FF D9 in the last 64 KiB). Otherwise what tells them apart may be the part that was
-    // skipped (DNG vs TIFF under Spy).
-    public static IReadOnlyList<PronomMatch> RemoveOutranked(IReadOnlyList<PronomMatch> hits)
+    // skipped (DNG vs TIFF under Spy). A hit the filter doesn't allow (a container trigger
+    // kept only for the container check) outranks nothing.
+    public static IReadOnlyList<PronomMatch> RemoveOutranked(IReadOnlyList<PronomMatch> hits, PronomFormatFilter? filter = null)
     {
         if (hits.Count < 2)
         {
@@ -22,6 +23,11 @@ internal static class PronomPriority
         HashSet<int>? outranked = null;
         for (var i = 0; i < hits.Count; i++)
         {
+            if (filter is not null && !filter.Allows(hits[i].Format))
+            {
+                continue;
+            }
+
             var hasPriorityOverIds = hits[i].Format.HasPriorityOverIds;
             for (var j = 0; j < hasPriorityOverIds.Count; j++)
             {

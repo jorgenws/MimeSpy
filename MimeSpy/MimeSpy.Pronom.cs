@@ -19,7 +19,7 @@ public sealed partial class MimeSpy : IMimeSpy
             throw new ArgumentNullException(nameof(options));
         }
 
-        if (options.MimeTypes.Count > 0)
+        if (options.MimeTypes.Count > 0 || options.ExcludedMimeTypes.Count > 0)
         {
             _filter = PronomFormatFilter.Build(options);
         }
@@ -206,7 +206,7 @@ public sealed partial class MimeSpy : IMimeSpy
     // head/tail are the file's two ends (the same span when it's all in memory);
     // file is the whole file, from position 0, for the container readers.
     private IReadOnlyList<Dossier> InvestigateCore(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, Stream file) =>
-        ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindFullMatches(head, tail, _filter)));
+        ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindFullMatches(head, tail, _filter), _filter));
 
     private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomMatch> matches) =>
         matches.Count == 0 ? [] : [.. matches.Select(m => new Dossier(m.Format.Puid, m.Format.Name, m.Format.Version, m.Format.MimeTypes, m.Format.Extensions, m.Match))];

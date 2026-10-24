@@ -39,7 +39,15 @@ If you already know you'll only ever hand MimeSpy one broad category of file - s
 var spy = new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/", "audio/"] });
 ```
 
-`MimeTypes` patterns are matched by case-insensitive starting-with against each format's own MIME type - `"image/"` catches every image subtype, `"application/pdf"` catches that one exactly - and are additive: a format is included if it matches *any* pattern. The default (no options at all, or an empty `MimeTypes` list) considers every cataloged format, identical to `new MimeSpy()`. The narrowed index is built once, at construction, not per call.
+`MimeTypes` patterns are matched by case-insensitive starting-with against each format's MIME types - `"image/"` catches every image subtype, `"application/pdf"` catches that one exactly - and are additive: a format is included if any of its types matches *any* pattern. The default (no options at all, or an empty `MimeTypes` list) considers every cataloged format, identical to `new MimeSpy()`. The narrowed index is built once, at construction, not per call.
+
+`ExcludedMimeTypes` takes patterns the same way and leaves out every format with a type matching one, even if `MimeTypes` includes it. Combined, they say exactly which answers you want - for example every image format except DNG, so a DNG file reports as the TIFF it's built on rather than as DNG:
+
+```csharp
+var spy = new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/"], ExcludedMimeTypes = ["image/dng"] });
+```
+
+A left-out format is never returned and never outranks one that's allowed. The generic ZIP and OLE2 formats are still matched behind the scenes when needed, so excluding `application/zip` - or including only `application/vnd.openxmlformats` - still finds a docx by opening the archive; the plain-ZIP answer is what's left out. See [docs/adr/0027](docs/adr/0027-options-exclude-formats-and-filter-results-not-just-signatures.md).
 
 ### Dependency injection
 

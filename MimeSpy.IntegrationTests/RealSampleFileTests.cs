@@ -14,83 +14,78 @@ public class RealSampleFileTests
 {
     private readonly MimeSpy _sut = new();
 
-    public static TheoryData<string, string> Fixtures => new()
+    // File, an extension the top Investigate result must list, and the PUID each of
+    // Spy and Investigate must put first. Pinning the top result means a change that
+    // demotes or loses a common format fails here rather than going unnoticed.
+    public static TheoryData<string, string, string, string> Fixtures => new()
     {
         // Images
-        { "sample.jpg", "jpg" },
-        { "sample.png", "png" },
-        { "sample.gif", "gif" },
-        { "sample.bmp", "bmp" },
-        { "sample.ico", "ico" },
-        { "sample.tiff", "tiff" },
-        { "sample.webp", "webp" },
-        { "sample.heic", "heic" },
+        { "sample.jpg", "jpg", "fmt/43", "fmt/43" },
+        { "sample.png", "png", "fmt/11", "fmt/11" },
+        { "sample.gif", "gif", "fmt/4", "fmt/4" },
+        { "sample.bmp", "bmp", "fmt/119", "fmt/119" },
+        { "sample.ico", "ico", "x-fmt/418", "x-fmt/418" },
+        { "sample.tiff", "tiff", "fmt/353", "fmt/353" },
+        { "sample.webp", "webp", "fmt/566", "fmt/566" },
+        { "sample.heic", "heic", "fmt/1101", "fmt/1101" },
 
         // Audio
-        { "sample.wav", "wav" },
-        { "sample.mp3", "mp3" },
-        { "sample.ogg", "ogg" },
-        { "sample.flac", "flac" },
-        { "sample.m4a", "m4a" },
+        { "sample.wav", "wav", "fmt/141", "fmt/141" },
+        { "sample.mp3", "mp3", "fmt/134", "fmt/134" },
+        { "sample.ogg", "ogg", "fmt/203", "fmt/203" },
+        { "sample.flac", "flac", "fmt/279", "fmt/279" },
+        { "sample.m4a", "m4a", "fmt/2094", "fmt/2094" },
 
         // Video
-        { "sample.mp4", "mp4" },
-        { "sample.webm", "webm" },
-        { "sample.avi", "avi" },
-        { "sample.mkv", "mkv" },
-        { "sample.mov", "mov" },
-        { "sample.ogv", "ogv" },
+        { "sample.mp4", "mp4", "fmt/199", "fmt/199" },
+        { "sample.webm", "webm", "fmt/573", "fmt/573" },
+        { "sample.avi", "avi", "fmt/5", "fmt/5" },
+        { "sample.mkv", "mkv", "fmt/569", "fmt/569" },
+        { "sample.mov", "mov", "x-fmt/384", "x-fmt/384" },
+        { "sample.ogv", "ogv", "fmt/945", "fmt/945" },
 
         // Fonts - sample.otf is deliberately not here, see
         // Investigate_RealOtfFile_IsNotIdentified_KnownGap below.
-        { "sample.ttf", "ttf" },
-        { "sample.woff2", "woff2" },
+        { "sample.ttf", "ttf", "x-fmt/453", "x-fmt/453" },
+        { "sample.woff2", "woff2", "fmt/1172", "fmt/1172" },
 
         // Archives
-        { "sample.zip", "zip" },
-        { "sample.gz", "gz" },
-        { "sample.bz2", "bz2" },
-        { "sample.xz", "xz" },
-        { "sample.tar", "tar" },
-        { "sample.7z", "7z" },
+        { "sample.zip", "zip", "x-fmt/263", "x-fmt/263" },
+        { "sample.gz", "gz", "x-fmt/266", "x-fmt/266" },
+        { "sample.bz2", "bz2", "x-fmt/268", "x-fmt/268" },
+        { "sample.xz", "xz", "fmt/1098", "fmt/1098" },
+        { "sample.tar", "tar", "x-fmt/265", "x-fmt/265" },
+        { "sample.7z", "7z", "fmt/484", "fmt/484" },
 
         // Documents and zip/OLE2-based containers
-        { "sample.pdf", "pdf" },
-        { "sample.rtf", "rtf" },
-        { "sample.docx", "docx" },
-        { "sample.xlsx", "xlsx" },
-        { "sample.pptx", "pptx" },
-        { "sample.odt", "odt" },
-        { "sample.ods", "ods" },
-        { "sample.odp", "odp" },
-        { "sample.jar", "jar" },
-        { "sample.doc", "doc" },
-        { "sample.xls", "xls" },
-        { "sample.ppt", "ppt" },
-        { "sample.epub", "epub" },
+        { "sample.pdf", "pdf", "fmt/17", "fmt/17" },
+        { "sample.rtf", "rtf", "fmt/53", "fmt/53" },
+        { "sample.docx", "docx", "x-fmt/263", "fmt/412" },
+        { "sample.xlsx", "xlsx", "fmt/189", "fmt/214" },
+        { "sample.pptx", "pptx", "fmt/189", "fmt/215" },
+        { "sample.odt", "odt", "fmt/291", "fmt/291" },
+        { "sample.ods", "ods", "fmt/295", "fmt/295" },
+        { "sample.odp", "odp", "fmt/293", "fmt/293" },
+        { "sample.jar", "jar", "x-fmt/412", "x-fmt/412" },
+        { "sample.doc", "doc", "fmt/40", "fmt/40" },
+        { "sample.xls", "xls", "fmt/111", "fmt/61" },
+        { "sample.ppt", "ppt", "fmt/126", "fmt/126" },
+        { "sample.epub", "epub", "x-fmt/263", "fmt/483" },
     };
 
     [Theory]
     [MemberData(nameof(Fixtures))]
-    public void Investigate_RealSampleFile_MatchesExpectedExtension(string fileName, string expectedExtension)
+    public void RealSampleFile_TopResultIsTheExpectedFormat(string fileName, string expectedExtension, string spyTopPuid, string investigateTopPuid)
     {
         var bytes = ReadFixture(fileName);
 
-        var result = _sut.Investigate(bytes);
+        var spied = _sut.Spy(bytes);
+        var investigated = _sut.Investigate(bytes);
 
-        Assert.Contains(result, f => f.Extensions.Contains(expectedExtension));
-    }
-
-    [Theory]
-    [MemberData(nameof(Fixtures))]
-    public void Investigate_RealSampleFile_ReturnsOnlyFullMatches(string fileName, string expectedExtension)
-    {
-        _ = expectedExtension;
-        var bytes = ReadFixture(fileName);
-
-        var result = _sut.Investigate(bytes);
-
-        Assert.All(result, f => Assert.Equal(Match.Full, f.Match));
+        Assert.Equal(spyTopPuid, spied[0].Puid);
+        Assert.Equal(investigateTopPuid, investigated[0].Puid);
+        Assert.Contains(expectedExtension, investigated[0].Extensions);
+        Assert.All(investigated, f => Assert.Equal(Match.Full, f.Match));
     }
 
     [Fact]

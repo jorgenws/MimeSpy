@@ -149,4 +149,9 @@ internal sealed record PronomByteSequence(PronomAnchor Anchor, IReadOnlyList<Pro
 // A named byte signature from PRONOM's DROID signature file. A format matches if every
 // one of its ByteSequences matches (BOF and EOF sequences on the same signature are an
 // AND, not an OR).
-internal sealed record PronomInternalSignature(int Id, IReadOnlyList<PronomByteSequence> ByteSequences);
+internal sealed record PronomInternalSignature(int Id, IReadOnlyList<PronomByteSequence> ByteSequences)
+{
+    // Whether every sequence is BOF-anchored - such a signature is fully checked even by
+    // FindHeaderMatches, which skips EOF sequences.
+    public bool IsBofOnly { get; } = ByteSequences.All(s => s.Anchor == PronomAnchor.BeginningOfFile);
+}

@@ -39,31 +39,43 @@ internal static class PronomSignatureMatcher
     {
         List<PronomFileFormat>? matches = null;
         HashSet<int>? matchedFormatIds = null;
+        HashSet<int>? fullyCheckedFormatIds = null;
 
         if (head.Length > 0)
         {
             var candidates = filter is null
                 ? PronomSignatureIndex.FindSignatureIdsByFirstByte(head[0])
                 : filter.FindSignatureIdsByFirstByte(head[0]);
-            TryMatchCandidates(candidates, head, tail, checkEof, ref matches, ref matchedFormatIds);
+            TryMatchCandidates(candidates, head, tail, checkEof, ref matches, ref matchedFormatIds, ref fullyCheckedFormatIds);
         }
 
         var fallback = filter?.SignatureIdsWithoutFixedFirstByte ?? PronomSignatureIndex.SignatureIdsWithoutFixedFirstByte;
-        TryMatchCandidates(fallback, head, tail, checkEof, ref matches, ref matchedFormatIds);
+        TryMatchCandidates(fallback, head, tail, checkEof, ref matches, ref matchedFormatIds, ref fullyCheckedFormatIds);
 
-        return matches ?? (IReadOnlyList<PronomFileFormat>)[];
+        if (matches is null)
+        {
+            return [];
+        }
+
+        // With checkEof every match was checked in full, so any of them may outrank
+        // another. Without it, only those in fullyCheckedFormatIds may - see PronomPriority.
+        return checkEof ? PronomPriority.RemoveOutranked(matches)
+            : fullyCheckedFormatIds is null ? matches
+            : PronomPriority.RemoveOutranked(matches, fullyCheckedFormatIds);
     }
 
     // matchedFormatIds dedupes across the two candidate sets above, and across a
     // single format's own alternative signatures (PronomFileFormat.InternalSignatureIds
     // is an OR - a format with two alternative signatures that both match must still
-    // only appear once).
-    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, ref List<PronomFileFormat>? matches, ref HashSet<int>? matchedFormatIds)
+    // only appear once). fullyCheckedFormatIds is only tracked without checkEof: the
+    // formats with at least one matching signature that had no EOF sequence to skip.
+    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, ref List<PronomFileFormat>? matches, ref HashSet<int>? matchedFormatIds, ref HashSet<int>? fullyCheckedFormatIds)
     {
         for (var i = 0; i < signatureIds.Count; i++)
         {
             var signatureId = signatureIds[i];
-            if (!Matches(PronomSignatureIndex.GetSignature(signatureId), head, tail, checkEof))
+            var signature = PronomSignatureIndex.GetSignature(signatureId);
+            if (!Matches(signature, head, tail, checkEof))
             {
                 continue;
             }
@@ -72,6 +84,12 @@ internal static class PronomSignatureMatcher
             for (var j = 0; j < formats.Count; j++)
             {
                 var format = formats[j];
+                if (!checkEof && signature.IsBofOnly)
+                {
+                    fullyCheckedFormatIds ??= [];
+                    fullyCheckedFormatIds.Add(format.Id);
+                }
+
                 matchedFormatIds ??= [];
                 if (!matchedFormatIds.Add(format.Id))
                 {

@@ -163,6 +163,7 @@ internal static class PronomSignatureIndex
 
         var extensions = new List<string>();
         var internalSignatureIds = new List<int>();
+        var hasPriorityOverIds = new List<int>();
 
         // See the matching comment in PronomInternalSignatureParser.ParseSubSequence:
         // ReadElementContentAsString() already advances past the sibling it reads, so
@@ -189,6 +190,9 @@ internal static class PronomSignatureIndex
                     case "InternalSignatureID":
                         internalSignatureIds.Add(int.Parse(reader.ReadElementContentAsString(), CultureInfo.InvariantCulture));
                         break;
+                    case "HasPriorityOverFileFormatID":
+                        hasPriorityOverIds.Add(int.Parse(reader.ReadElementContentAsString(), CultureInfo.InvariantCulture));
+                        break;
                     default:
                         reader.Skip();
                         break;
@@ -196,7 +200,7 @@ internal static class PronomSignatureIndex
             }
         }
 
-        return new PronomFileFormat(id, puid, name, version, mimeType, extensions, internalSignatureIds);
+        return new PronomFileFormat(id, puid, name, version, mimeType, extensions, internalSignatureIds, hasPriorityOverIds);
     }
 
     private static int? ParseIntAttribute(XmlReader reader, string name) => PronomInternalSignatureParser.ParseIntAttribute(reader, name);

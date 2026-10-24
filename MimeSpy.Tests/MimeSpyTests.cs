@@ -41,6 +41,19 @@ public class MimeSpyTests
         Assert.Empty(result);
     }
 
+    [Theory]
+    [MemberData(nameof(SpanMethods))]
+    public void Wav_PriorityDropsTheGenericRiffAndWaveformMatches(SpanMethod method)
+    {
+        // A WAV file also matches PRONOM's generic RIFF (fmt/1886) and Waveform Audio
+        // (fmt/6) signatures. PCMWAVEFORMAT (fmt/141) has priority over both, and its
+        // signature is BOF-only, so even Spy has checked it in full.
+        var result = method.Invoke(_sut, WavBytes);
+
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/141", single.Puid);
+    }
+
     [Fact]
     public void Spy_ViaIMimeSpyReference_MatchesSameAsConcreteType()
     {

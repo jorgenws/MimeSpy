@@ -47,7 +47,8 @@ internal static class PronomContainerMatcher
         // DROID FileFormatCollection (shouldn't happen in practice, PRONOM's PUID
         // space is unified - but if it ever did, falling back to the generic
         // container match beats claiming a format this library can't describe).
-        return formats.Count > 0 ? formats : coreMatches;
+        // DROID applies the same priorities to container hits as to binary ones.
+        return formats.Count > 0 ? PronomPriority.RemoveOutranked(formats) : coreMatches;
     }
 
     private static IReadOnlyList<string> MatchZip(Stream file)

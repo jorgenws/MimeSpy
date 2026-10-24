@@ -96,17 +96,16 @@ public class RealSampleFileTests
     }
 
     [Fact]
-    public void Investigate_RealJpegFile_TiesBetweenJfifAndRawJpegStream()
+    public void Investigate_RealJpegFile_NarrowsToJfifOverRawJpegStream()
     {
-        // A real JPEG matches both PRONOM's JFIF-specific PUID and its generic
-        // "Raw JPEG Stream" PUID - both resolve to the same extensions/mime
-        // type, so this is a real, documented tie, not a bug.
+        // A real JPEG matches both JFIF (fmt/43) and the generic Raw JPEG Stream
+        // (fmt/41); PRONOM gives JFIF priority (docs/adr/0023).
         var bytes = ReadFixture("sample.jpg");
 
         var result = _sut.Investigate(bytes);
 
-        Assert.Equal(2, result.Count);
-        Assert.All(result, f => Assert.Contains("jpg", f.Extensions));
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/43", single.Puid);
     }
 
     [Fact]
@@ -116,7 +115,8 @@ public class RealSampleFileTests
         // Negative (DNG) variant share the same BOF bytes, and Spy skips the
         // EOF/structure check that would tell them apart - so a real TIFF
         // file matches every DNG/TIFF-family PUID that shares its header, not
-        // just the one it actually is.
+        // just the one it actually is. Several of those outrank plain TIFF, but
+        // only on evidence Spy skipped, so priority doesn't drop it (docs/adr/0023).
         var bytes = ReadFixture("sample.tiff");
 
         var result = _sut.Spy(bytes);
@@ -167,24 +167,21 @@ public class RealSampleFileTests
     }
 
     [Theory]
-    [InlineData("sample.odt", "odt", "ott")]
-    [InlineData("sample.ods", "ods", "ots")]
-    [InlineData("sample.odp", "odp", "otp")]
-    public void Investigate_RealOdfFile_TiesWithItsOwnTemplateSibling(string fileName, string expectedExtension, string templateExtension)
+    [InlineData("sample.odt", "fmt/291", "odt", "ott")]
+    [InlineData("sample.ods", "fmt/295", "ods", "ots")]
+    [InlineData("sample.odp", "fmt/293", "odp", "otp")]
+    public void Investigate_RealOdfFile_NarrowsToOdf12_WhichStillCarriesItsTemplateExtension(string fileName, string expectedPuid, string expectedExtension, string templateExtension)
     {
-        // PRONOM's container engine can tell ODF's family (odt/ods/odp) apart
-        // from one another, but - like the old engine - still can't tell a
-        // document from its own template variant (odt vs ott, etc.), since
-        // that distinction isn't encoded in the archive's structure. It also
-        // catalogs two spec-version PUIDs (1.1 and 1.2) for this exact family,
-        // each independently carrying both extensions, so a real file ties
-        // between them too.
+        // The container engine matches both ODF 1.1 and 1.2 PUIDs for each family;
+        // PRONOM gives 1.2 priority (docs/adr/0023). A document still can't be told
+        // from its own template - each PUID carries both extensions.
         var bytes = ReadFixture(fileName);
 
         var result = _sut.Investigate(bytes);
 
-        Assert.Equal(2, result.Count);
-        Assert.All(result, f => Assert.Equal([expectedExtension, templateExtension], f.Extensions));
+        var single = Assert.Single(result);
+        Assert.Equal(expectedPuid, single.Puid);
+        Assert.Equal([expectedExtension, templateExtension], single.Extensions);
     }
 
     [Fact]
@@ -198,24 +195,8 @@ public class RealSampleFileTests
         Assert.Equal("x-fmt/412", single.Puid);
     }
 
-    [Fact]
-    public void Investigate_RealLegacyWordFile_TiesBetweenSpecificAndGenericWordPuids()
-    {
-        // sample.doc (real LibreOffice Word 97 export, OLE2/CFBF) narrows via
-        // the container engine to two Word-specific PUIDs tied together - a
-        // specific one and PRONOM's generic "Microsoft Word (Generic)" - both
-        // sharing the "doc" extension. Unlike the old engine, this never ties
-        // with "dot" - PRONOM's own data doesn't link them for this file.
-        var bytes = ReadFixture("sample.doc");
-
-        var result = _sut.Investigate(bytes);
-
-        Assert.Equal(2, result.Count);
-        Assert.All(result, f => Assert.Equal("application/msword", f.MimeType));
-        Assert.All(result, f => Assert.Contains("doc", f.Extensions));
-    }
-
     [Theory]
+    [InlineData("sample.doc", "fmt/40", "doc")]
     [InlineData("sample.xls", "fmt/61", "xls")]
     [InlineData("sample.ppt", "fmt/126", "ppt")]
     public void Investigate_RealLegacyOfficeFile_NarrowsToASinglePuid(string fileName, string expectedPuid, string expectedExtension)

@@ -40,7 +40,7 @@ public class RealSampleFileTests
         { "sample.mp4", "mp4", "fmt/199", "fmt/199", "application/mp4" },
         { "sample.webm", "webm", "fmt/573", "fmt/573", "video/webm" },
         { "sample.avi", "avi", "fmt/5", "fmt/5", "video/x-msvideo" },
-        { "sample.mkv", "mkv", "fmt/569", "fmt/569", null },
+        { "sample.mkv", "mkv", "fmt/569", "fmt/569", "video/x-matroska" },
         { "sample.mov", "mov", "x-fmt/384", "x-fmt/384", "video/quicktime" },
         { "sample.ogv", "ogv", "fmt/945", "fmt/945", "video/ogg" },
 
@@ -53,9 +53,9 @@ public class RealSampleFileTests
         { "sample.zip", "zip", "x-fmt/263", "x-fmt/263", "application/zip" },
         { "sample.gz", "gz", "x-fmt/266", "x-fmt/266", "application/gzip" },
         { "sample.bz2", "bz2", "x-fmt/268", "x-fmt/268", "application/x-bzip2" },
-        { "sample.xz", "xz", "fmt/1098", "fmt/1098", null },
+        { "sample.xz", "xz", "fmt/1098", "fmt/1098", "application/x-xz" },
         { "sample.tar", "tar", "x-fmt/265", "x-fmt/265", "application/x-tar" },
-        { "sample.7z", "7z", "fmt/484", "fmt/484", null },
+        { "sample.7z", "7z", "fmt/484", "fmt/484", "application/x-7z-compressed" },
 
         // Documents and zip/OLE2-based containers
         { "sample.pdf", "pdf", "fmt/17", "fmt/17", "application/pdf" },

@@ -216,7 +216,10 @@ public sealed partial class MimeSpy : IMimeSpy
 /// <param name="Puid">PRONOM's stable identifier for the format, e.g. <c>"fmt/412"</c>.</param>
 /// <param name="Name">The format's name, e.g. <c>"Microsoft Word for Windows"</c>.</param>
 /// <param name="Version">The format's version, if PRONOM records one.</param>
-/// <param name="MimeTypes">The format's MIME types, in the order PRONOM lists them. Empty if PRONOM records none.</param>
+/// <param name="MimeTypes">
+/// The format's MIME types, in the order PRONOM lists them. For a few common formats PRONOM
+/// gives none, MimeSpy supplies the conventional type. Empty if there is none.
+/// </param>
 /// <param name="Extensions">File extensions associated with the format.</param>
 /// <param name="Match">Whether every part of the format's signature was checked against the file.</param>
 public sealed record Dossier(string Puid, string Name, string? Version, IReadOnlyList<string> MimeTypes, IReadOnlyList<string> Extensions, Match Match = Match.Full)

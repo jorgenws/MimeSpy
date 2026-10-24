@@ -27,6 +27,7 @@
   <ItemGroup>
     <EmbeddedResource Include="..\Resources\pronom-droid-signatures.xml" LogicalName="pronom-droid-signatures.xml" Link="Resources\pronom-droid-signatures.xml" />
     <EmbeddedResource Include="..\Resources\pronom-container-signatures.xml" LogicalName="pronom-container-signatures.xml" Link="Resources\pronom-container-signatures.xml" />
+    <EmbeddedResource Include="..\Resources\mimespy-mime-types.xml" LogicalName="mimespy-mime-types.xml" Link="Resources\mimespy-mime-types.xml" />
     <None Include="..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 

@@ -51,7 +51,7 @@ public sealed partial class MimeSpy : IMimeSpy
     private const int InvestigateWindowSize = 8 * 1024 * 1024;
 
     /// <inheritdoc/>
-    public IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindMatchesGuess(bytes, _filter));
+    public IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindHeaderMatches(bytes, _filter));
 
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Spy(Stream stream)
@@ -208,7 +208,7 @@ public sealed partial class MimeSpy : IMimeSpy
     // head/tail are the file's two ends (the same span when it's all in memory);
     // file is the whole file, from position 0, for the container readers.
     private IReadOnlyList<Dossier> InvestigateCore(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, Stream file) =>
-        ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindMatchesFull(head, tail, _filter)));
+        ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindFullMatches(head, tail, _filter)));
 
     private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomFileFormat> formats) =>
         formats.Count == 0 ? [] : [.. formats.Select(f => new Dossier(f.Puid, f.Name, f.Version, f.MimeType, f.Extensions))];

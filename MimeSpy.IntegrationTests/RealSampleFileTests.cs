@@ -8,9 +8,7 @@ namespace MimeSpy.IntegrationTests;
 /// genuine encoder/tool output (ffmpeg, ImageMagick, gzip/bzip2/xz/tar) or real-world
 /// files pulled from Apache Tika's test suite. See README.md for exactly where each
 /// one came from and how to regenerate it. Expected results below were captured by
-/// running the real PRONOM engine against each fixture, not assumed from the old
-/// Gary-Kessler-table engine's behavior - the two don't always agree (see the
-/// Investigate_RealEpubFile tests below for a case where the new engine does better).
+/// running the real PRONOM engine against each fixture, not assumed.
 /// </summary>
 public class RealSampleFileTests
 {

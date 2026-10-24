@@ -2,8 +2,7 @@ namespace MimeSpy;
 
 /// <summary>
 /// Detects file format(s) from a file's bytes, using PRONOM's own signature data.
-/// Implemented by <see cref="MimeSpy"/>, which has no constructor arguments and no
-/// mutable state - register it as a singleton against this interface for callers that
+/// Implemented by <see cref="MimeSpy"/>, which has no mutable state - register it as a singleton against this interface for callers that
 /// want a mockable seam (e.g. flow code that calls these methods inline rather than
 /// taking a pre-computed <see cref="Dossier"/> list as input).
 /// </summary>

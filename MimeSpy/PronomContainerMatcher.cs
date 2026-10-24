@@ -18,7 +18,7 @@ internal static class PronomContainerMatcher
     /// entries the readers actually need are read, never the whole file. Its
     /// position is left wherever the readers last moved it.
     /// </param>
-    /// <param name="coreMatches">The file's matches from <see cref="PronomSignatureMatcher.FindMatchesFull"/>.</param>
+    /// <param name="coreMatches">The file's matches from <see cref="PronomSignatureMatcher.FindFullMatches"/>.</param>
     public static IReadOnlyList<PronomFileFormat> Refine(Stream file, IReadOnlyList<PronomFileFormat> coreMatches)
     {
         string? containerType = null;

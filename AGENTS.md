@@ -17,7 +17,7 @@ Use Fact instead of Theory if the Theory needs logic that is just there to force
 ## Architecture
 This is a one layer library, built on PRONOM's own DROID signature data rather than a hardcoded sniffer per format.
 There's no plugin interface for adding format support - a new format, or a new byte-sequence signature for an existing one, is a PRONOM data addition (see Data below), not a new C# type. ZIP/OLE2 sub-format disambiguation (docx vs xlsx vs plain zip, doc vs xls, ...) is resolved the same way, by `PronomContainerMatcher` reading PRONOM's own container-signature table - only a genuinely new container *type* (beyond ZIP/OLE2) would need a new reader (`PronomZipContainerReader`/`PronomOle2ContainerReader`'s siblings) and a `PronomContainerMatcher` change.
-Only `MimeSpy.Spy()`/`Investigate()` (and their `Stream`/async overloads), `IMimeSpy` (the interface `MimeSpy` implements, for callers that want a mockable seam), and the `Dossier` record in MimeSpy.Pronom.cs are public. Everything else - the `Pronom*` signature/container-index, matcher, and reader types - is `internal`. Keep it that way unless there's a real reason to grow the public surface.
+Only `MimeSpy.Spy()`/`Investigate()` (and their `Stream`/async overloads), `IMimeSpy` (the interface `MimeSpy` implements, for callers that want a mockable seam), `MimeSpyOptions` (the constructor's format filter), and the `Dossier` record in MimeSpy.Pronom.cs are public. Everything else - the `Pronom*` signature/container-index, matcher, and reader types - is `internal`. Keep it that way unless there's a real reason to grow the public surface.
 
 ## XML comments
 The XML comments are for consumers of the library and need to be informative to them.

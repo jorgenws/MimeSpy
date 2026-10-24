@@ -100,8 +100,10 @@ See [docs/releasing.md](docs/releasing.md) for how to cut a new NuGet release.
 
 Both signature tables are [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/)'s own data, published by the UK National Archives: `Resources/pronom-droid-signatures.xml` is DROID's signature file (format/extension/mime-type metadata plus the byte-sequence signatures themselves), and `Resources/pronom-container-signatures.xml` is DROID's container signature file (the rules behind resolving a generic ZIP/OLE2 match to a specific format - docx vs xlsx vs plain zip, doc vs xls, ...). Both are embedded as resources under [Resources/](Resources/) in their native XML and parsed once into in-memory indexes at first use.
 
+Contains public sector information licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
+
 PRONOM gives most formats no MIME type, including some common ones (7z, Matroska, xz, AVIF, MPEG video, ISO images). `Resources/mimespy-mime-types.xml` fills those in for a short, hand-checked list, using Apache httpd's `mime.types`; it never overrides a type PRONOM gives. See [docs/adr/0026](docs/adr/0026-mime-types-for-common-formats-pronom-leaves-empty.md).
 
 ## License
 
-[MIT](LICENSE).
+The code is [MIT](LICENSE). The embedded PRONOM signature files under [Resources/](Resources/) are The National Archives' data, under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) - see [Data](#data).

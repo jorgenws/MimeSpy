@@ -1,24 +1,16 @@
 namespace MimeSpy;
 
-/// <summary>
-/// Refines a set of core DROID matches using PRONOM's container-signature table:
-/// when one of those matches is a generic ZIP/OLE2 PUID
-/// (<see cref="PronomContainerSignatureIndex.FindTriggerContainerType"/> says which
-/// ones are), opens the container and checks its named entries against every
-/// container signature of that type, resolving to whichever more specific PUIDs
-/// match instead.
-/// </summary>
+// Refines a set of core DROID matches using PRONOM's container-signature table: when
+// one of those matches is a generic ZIP/OLE2 PUID
+// (PronomContainerSignatureIndex.FindTriggerContainerType says which ones are), opens
+// the container and checks its named entries against every container signature of that
+// type, resolving to whichever more specific PUIDs match instead.
 internal static class PronomContainerMatcher
 {
-    /// <param name="file">
-    /// The complete file, seekable, with position 0 at its first byte - both readers
-    /// need random access to all of it (ZIP's central directory lives at the end;
-    /// OLE2 entries can be anywhere), so this can never work from a leading-prefix
-    /// buffer the way the core match can. Read in place: only the structures and
-    /// entries the readers actually need are read, never the whole file. Its
-    /// position is left wherever the readers last moved it.
-    /// </param>
-    /// <param name="coreMatches">The file's matches from <see cref="PronomSignatureMatcher.FindFullMatches"/>.</param>
+    // file is the complete file, seekable, at position 0. The readers need random access
+    // to it (a ZIP's central directory is at the end, OLE2 entries can be anywhere) and
+    // read only what they need, in place. Its position is left wherever they stopped.
+    // coreMatches is FindFullMatches' result for the same file.
     public static IReadOnlyList<PronomFileFormat> Refine(Stream file, IReadOnlyList<PronomFileFormat> coreMatches)
     {
         string? containerType = null;

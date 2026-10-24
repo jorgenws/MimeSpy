@@ -1,18 +1,15 @@
 namespace MimeSpy;
 
-/// <summary>
-/// Matches bytes against PRONOM's DROID signature table. A signature's byte
-/// sequences chain together left-to-right (BOF-anchored) or right-to-left
-/// (EOF-anchored). Each <see cref="PronomSubSequence"/>'s outer gap window bounds
-/// not the anchor's own position, but the reach of the whole unit on the side facing
-/// the previous chain step - the leftmost point of its left-fragment chain for a
-/// forward (BOF) walk, the rightmost point of its right-fragment chain for a
-/// backward (EOF) walk - falling back to the anchor's own start/end when that side
-/// has no fragments. If a fragment chain fails to hold for a given anchor
-/// occurrence, the search backtracks to the next occurrence in range rather than
-/// giving up outright - a short, common anchor (e.g. a single "@" or "\") can occur
-/// incidentally before the one that's actually surrounded by valid fragments.
-/// </summary>
+// Matches bytes against PRONOM's DROID signature table. A signature's byte sequences
+// chain together left-to-right (BOF-anchored) or right-to-left (EOF-anchored). Each
+// PronomSubSequence's outer gap window bounds not the anchor's own position, but the
+// reach of the whole unit on the side facing the previous chain step - the leftmost
+// point of its left-fragment chain for a forward (BOF) walk, the rightmost point of its
+// right-fragment chain for a backward (EOF) walk - falling back to the anchor's own
+// start/end when that side has no fragments. If a fragment chain fails to hold for a
+// given anchor occurrence, the search backtracks to the next occurrence in range rather
+// than giving up outright - a short, common anchor (e.g. a single "@" or "\") can occur
+// incidentally before the one that's actually surrounded by valid fragments.
 internal static class PronomSignatureMatcher
 {
     // Every loop over an IReadOnlyList<T> here indexes it rather than using foreach:
@@ -20,53 +17,24 @@ internal static class PronomSignatureMatcher
     // search below runs its loops once per candidate position - on a large buffer
     // that was tens of MB of garbage per call, and a measurable share of the time.
 
-    /// <summary>
-    /// Matches signatures against a buffer that may only be a leading prefix of the
-    /// real file, skipping a signature's end-of-file-anchored sequences rather than
-    /// evaluating them - so this can report a format PRONOM itself only considers
-    /// confirmed once its trailer is checked (docs/adr/0017). A match here is not
-    /// guaranteed to also be reported by <see cref="FindFullMatches"/> against the
-    /// same file's complete bytes. Where two formats share a BOF (e.g. TIFF/DNG),
-    /// skipping EOF for both means both match - a tie rather than a guess.
-    /// </summary>
+    // For Spy: bytes may be only a leading prefix, so EOF-anchored sequences are skipped
+    // (docs/adr/0017). A match here may not survive FindFullMatches on the whole file.
+    // Two formats sharing a BOF (e.g. TIFF/DNG) both match - a tie, not a guess.
     public static IReadOnlyList<PronomFileFormat> FindHeaderMatches(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, bytes, checkEof: false, filter);
 
-    /// <summary>
-    /// Matches signatures against a complete file, so end-of-file-anchored sequences
-    /// can be evaluated against its true end. BOF-anchored sequences are evaluated
-    /// against <paramref name="head"/> (which starts at the file's first byte),
-    /// EOF-anchored ones against <paramref name="tail"/> (which ends at the file's
-    /// last byte) - pass the same span as both when the whole file is in hand. A file
-    /// too large to hold whole can pass a window onto each end instead: every offset
-    /// either side works with is relative to its own end of the file, so neither needs
-    /// to know how far apart the two windows really are - but a sequence whose gap
-    /// reaches past the end of its window (only possible for PRONOM's unbounded gaps)
-    /// is searched only as far as the window goes.
-    /// </summary>
+    // For Investigate: BOF sequences are matched against head (starting at the file's
+    // first byte), EOF sequences against tail (ending at its last byte). Pass the same
+    // span twice for a whole file in memory, or a window onto each end of a large one;
+    // each side's offsets are relative to its own end, so only an unbounded gap that
+    // runs past its window is affected.
     public static IReadOnlyList<PronomFileFormat> FindFullMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, PronomFormatFilter? filter = null) => FindMatches(head, tail, checkEof: true, filter);
 
-    /// <summary>
-    /// Matches a single signature against <paramref name="bytes"/> as complete
-    /// content (a container signature's extracted entry, e.g.) - used by
-    /// <see cref="PronomContainerMatcher"/> rather than the DROID table walk above.
-    /// </summary>
+    // One signature against complete content - a container entry, for PronomContainerMatcher.
     public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, bytes, checkEof: true);
 
-    // Rather than walking every cataloged format's signature(s) against every file,
-    // only signatures that could possibly match head[0] are tried: those indexed
-    // under that exact byte, plus the (much smaller) set PronomSignatureIndex
-    // couldn't pin to one required first byte at all (see its own
-    // TryGetRequiredFirstByte doc) - those are always tried, so this never excludes
-    // a signature that could legitimately match, only ones whose own BOF anchor
-    // proves it can't. filter, when given, swaps both candidate sets for a narrower
-    // pair built from only the signatures its included formats reference (see
-    // PronomFormatFilter) - null (the default, unfiltered MimeSpy()) takes the exact
-    // same path as before filtering existed. Everything past this candidate
-    // selection - Matches() itself, and resolving a matched signature back to its
-    // claiming format(s) - is unaware filtering exists at all.
-    //
-    // head and tail are the same span whenever the whole file is in hand; see
-    // FindFullMatches for when they aren't.
+    // Only signatures that could match head[0] are tried: those indexed under that byte,
+    // plus the small set with no fixed first byte, which are always tried. A filter swaps
+    // in its own narrower pair of sets; nothing after candidate selection knows about it.
     private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter)
     {
         List<PronomFileFormat>? matches = null;

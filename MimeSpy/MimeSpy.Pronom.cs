@@ -10,10 +10,8 @@ public sealed partial class MimeSpy : IMimeSpy
     {
     }
 
-    /// <summary>
-    /// Considers only formats matching <paramref name="options"/> - see
-    /// <see cref="MimeSpyOptions.MimeTypes"/>. Built once here, not per call.
-    /// </summary>
+    /// <summary>Considers only the formats <paramref name="options"/> selects.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is null.</exception>
     public MimeSpy(MimeSpyOptions options)
     {
         if (options is null)
@@ -214,14 +212,10 @@ public sealed partial class MimeSpy : IMimeSpy
         formats.Count == 0 ? [] : [.. formats.Select(f => new Dossier(f.Puid, f.Name, f.Version, f.MimeType, f.Extensions))];
 }
 
-/// <summary>
-/// Everything PRONOM knows about one format that matched, from
-/// <see cref="MimeSpy.Spy(ReadOnlySpan{byte})"/> or <see cref="MimeSpy.Investigate(ReadOnlySpan{byte})"/>
-/// (and their overloads).
-/// </summary>
-/// <param name="Puid">The PRONOM Unique Identifier (e.g. <c>"fmt/412"</c>, <c>"x-fmt/263"</c>) - PRONOM's own stable format key.</param>
-/// <param name="Name">The format's name, as PRONOM records it (e.g. <c>"Microsoft Word for Windows"</c>).</param>
-/// <param name="Version">The format's version, if PRONOM records one for this PUID specifically (distinct PUIDs usually exist per version instead).</param>
-/// <param name="MimeType">The MIME type PRONOM associates with this format, if any - not every PRONOM format has one.</param>
-/// <param name="Extensions">File extensions associated with this format.</param>
+/// <summary>One format that matched, as PRONOM records it.</summary>
+/// <param name="Puid">PRONOM's stable identifier for the format, e.g. <c>"fmt/412"</c>.</param>
+/// <param name="Name">The format's name, e.g. <c>"Microsoft Word for Windows"</c>.</param>
+/// <param name="Version">The format's version, if PRONOM records one.</param>
+/// <param name="MimeType">The format's MIME type, if PRONOM records one.</param>
+/// <param name="Extensions">File extensions associated with the format.</param>
 public sealed record Dossier(string Puid, string Name, string? Version, string? MimeType, IReadOnlyList<string> Extensions);

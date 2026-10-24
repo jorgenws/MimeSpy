@@ -1,22 +1,9 @@
 namespace MimeSpy;
 
-/// <summary>
-/// A per-<see cref="MimeSpy"/>-instance narrowing of PRONOM's full catalog to just
-/// the signatures referenced by formats matching a <see cref="MimeSpyOptions.MimeTypes"/>
-/// pattern list, built once when that instance is constructed (see <see cref="Build"/>).
-/// Mirrors <see cref="PronomSignatureIndex"/>'s own first-byte/fallback split, but
-/// over that narrower set, so a filtered instance's calls skip every signature that
-/// could only ever resolve to an excluded format.
-///
-/// This is the only place the <see cref="MimeSpyOptions.MimeTypes"/> decision is
-/// made - everything downstream of it (<see cref="PronomSignatureMatcher"/>'s actual
-/// matching, and resolving a matched signature back to its claiming format(s)) stays
-/// exactly as it is for an unfiltered <see cref="MimeSpy"/>. One consequence: if a
-/// signature is shared between an included and an excluded format (a version/alias
-/// tie), both are still returned once that signature matches - this only decides
-/// which signatures are worth trying at all, not which formats a matching signature
-/// is allowed to resolve to.
-/// </summary>
+// The signatures referenced by formats matching MimeSpyOptions.MimeTypes, bucketed by
+// required first byte the same way PronomSignatureIndex is. Built once per MimeSpy
+// instance. It only narrows which signatures are tried: a matching signature shared
+// with an excluded format still reports both.
 internal sealed class PronomFormatFilter
 {
     public IReadOnlyList<int> SignatureIdsWithoutFixedFirstByte { get; }

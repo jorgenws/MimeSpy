@@ -208,8 +208,8 @@ public sealed partial class MimeSpy : IMimeSpy
     private IReadOnlyList<Dossier> InvestigateCore(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, Stream file) =>
         ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindFullMatches(head, tail, _filter)));
 
-    private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomFileFormat> formats) =>
-        formats.Count == 0 ? [] : [.. formats.Select(f => new Dossier(f.Puid, f.Name, f.Version, f.MimeType, f.Extensions))];
+    private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomMatch> matches) =>
+        matches.Count == 0 ? [] : [.. matches.Select(m => new Dossier(m.Format.Puid, m.Format.Name, m.Format.Version, m.Format.MimeType, m.Format.Extensions, m.Match))];
 }
 
 /// <summary>One format that matched, as PRONOM records it.</summary>
@@ -218,4 +218,19 @@ public sealed partial class MimeSpy : IMimeSpy
 /// <param name="Version">The format's version, if PRONOM records one.</param>
 /// <param name="MimeType">The format's MIME type, if PRONOM records one.</param>
 /// <param name="Extensions">File extensions associated with the format.</param>
-public sealed record Dossier(string Puid, string Name, string? Version, string? MimeType, IReadOnlyList<string> Extensions);
+/// <param name="Match">Whether every part of the format's signature was checked against the file.</param>
+public sealed record Dossier(string Puid, string Name, string? Version, string? MimeType, IReadOnlyList<string> Extensions, Match Match = Match.Full);
+
+/// <summary>How much of a format's signature was checked against the file.</summary>
+public enum Match
+{
+    /// <summary>Every part of the signature was checked and matched.</summary>
+    Full,
+
+    /// <summary>
+    /// Only the signature's start-of-file part was checked. <c>Spy</c> skips any check at
+    /// the end of the file, so the bytes are consistent with this format but haven't been
+    /// shown to be it. <c>Investigate</c> never returns a partial match.
+    /// </summary>
+    Partial,
+}

@@ -20,14 +20,14 @@ internal static class PronomSignatureMatcher
     // For Spy: bytes may be only a leading prefix, so EOF-anchored sequences are skipped
     // (docs/adr/0017). A match here may not survive FindFullMatches on the whole file.
     // Two formats sharing a BOF (e.g. TIFF/DNG) both match - a tie, not a guess.
-    public static IReadOnlyList<PronomFileFormat> FindHeaderMatches(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, bytes, checkEof: false, filter);
+    public static IReadOnlyList<PronomMatch> FindHeaderMatches(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, bytes, checkEof: false, filter);
 
     // For Investigate: BOF sequences are matched against head (starting at the file's
     // first byte), EOF sequences against tail (ending at its last byte). Pass the same
     // span twice for a whole file in memory, or a window onto each end of a large one;
     // each side's offsets are relative to its own end, so only an unbounded gap that
     // runs past its window is affected.
-    public static IReadOnlyList<PronomFileFormat> FindFullMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, PronomFormatFilter? filter = null) => FindMatches(head, tail, checkEof: true, filter);
+    public static IReadOnlyList<PronomMatch> FindFullMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, PronomFormatFilter? filter = null) => FindMatches(head, tail, checkEof: true, filter);
 
     // One signature against complete content - a container entry, for PronomContainerMatcher.
     public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, bytes, checkEof: true);
@@ -35,41 +35,36 @@ internal static class PronomSignatureMatcher
     // Only signatures that could match head[0] are tried: those indexed under that byte,
     // plus the small set with no fixed first byte, which are always tried. A filter swaps
     // in its own narrower pair of sets; nothing after candidate selection knows about it.
-    private static IReadOnlyList<PronomFileFormat> FindMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter)
+    private static IReadOnlyList<PronomMatch> FindMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter)
     {
-        List<PronomFileFormat>? matches = null;
-        HashSet<int>? matchedFormatIds = null;
-        HashSet<int>? fullyCheckedFormatIds = null;
+        List<PronomMatch>? matches = null;
+        Dictionary<int, int>? indexByFormatId = null;
 
         if (head.Length > 0)
         {
             var candidates = filter is null
                 ? PronomSignatureIndex.FindSignatureIdsByFirstByte(head[0])
                 : filter.FindSignatureIdsByFirstByte(head[0]);
-            TryMatchCandidates(candidates, head, tail, checkEof, ref matches, ref matchedFormatIds, ref fullyCheckedFormatIds);
+            TryMatchCandidates(candidates, head, tail, checkEof, ref matches, ref indexByFormatId);
         }
 
         var fallback = filter?.SignatureIdsWithoutFixedFirstByte ?? PronomSignatureIndex.SignatureIdsWithoutFixedFirstByte;
-        TryMatchCandidates(fallback, head, tail, checkEof, ref matches, ref matchedFormatIds, ref fullyCheckedFormatIds);
+        TryMatchCandidates(fallback, head, tail, checkEof, ref matches, ref indexByFormatId);
 
         if (matches is null)
         {
             return [];
         }
 
-        // With checkEof every match was checked in full, so any of them may outrank
-        // another. Without it, only those in fullyCheckedFormatIds may - see PronomPriority.
-        return checkEof ? PronomPriority.RemoveOutranked(matches)
-            : fullyCheckedFormatIds is null ? matches
-            : PronomPriority.RemoveOutranked(matches, fullyCheckedFormatIds);
+        return PronomPriority.Order(PronomPriority.RemoveOutranked(matches));
     }
 
-    // matchedFormatIds dedupes across the two candidate sets above, and across a
-    // single format's own alternative signatures (PronomFileFormat.InternalSignatureIds
-    // is an OR - a format with two alternative signatures that both match must still
-    // only appear once). fullyCheckedFormatIds is only tracked without checkEof: the
-    // formats with at least one matching signature that had no EOF sequence to skip.
-    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, ref List<PronomFileFormat>? matches, ref HashSet<int>? matchedFormatIds, ref HashSet<int>? fullyCheckedFormatIds)
+    // indexByFormatId dedupes across the two candidate sets above, and across a single
+    // format's own alternative signatures (PronomFileFormat.InternalSignatureIds is an OR
+    // - a format with two alternative signatures that both match must still only appear
+    // once). Without checkEof, a signature with an EOF sequence only matches partially;
+    // a format is a full match if any of its matching signatures was checked in full.
+    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, ref List<PronomMatch>? matches, ref Dictionary<int, int>? indexByFormatId)
     {
         for (var i = 0; i < signatureIds.Count; i++)
         {
@@ -80,24 +75,22 @@ internal static class PronomSignatureMatcher
                 continue;
             }
 
+            var match = checkEof || signature.IsBofOnly ? Match.Full : Match.Partial;
             var formats = PronomSignatureIndex.FindFormatsBySignatureId(signatureId);
             for (var j = 0; j < formats.Count; j++)
             {
                 var format = formats[j];
-                if (!checkEof && signature.IsBofOnly)
-                {
-                    fullyCheckedFormatIds ??= [];
-                    fullyCheckedFormatIds.Add(format.Id);
-                }
-
-                matchedFormatIds ??= [];
-                if (!matchedFormatIds.Add(format.Id))
-                {
-                    continue;
-                }
-
                 matches ??= [];
-                matches.Add(format);
+                indexByFormatId ??= [];
+                if (!indexByFormatId.TryGetValue(format.Id, out var index))
+                {
+                    indexByFormatId[format.Id] = matches.Count;
+                    matches.Add(new PronomMatch(format, match));
+                }
+                else if (match == Match.Full)
+                {
+                    matches[index] = new PronomMatch(format, Match.Full);
+                }
             }
         }
     }

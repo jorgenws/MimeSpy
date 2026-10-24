@@ -11,12 +11,12 @@ internal static class PronomContainerMatcher
     // to it (a ZIP's central directory is at the end, OLE2 entries can be anywhere) and
     // read only what they need, in place. Its position is left wherever they stopped.
     // coreMatches is FindFullMatches' result for the same file.
-    public static IReadOnlyList<PronomFileFormat> Refine(Stream file, IReadOnlyList<PronomFileFormat> coreMatches)
+    public static IReadOnlyList<PronomMatch> Refine(Stream file, IReadOnlyList<PronomMatch> coreMatches)
     {
         string? containerType = null;
-        foreach (var format in coreMatches)
+        foreach (var match in coreMatches)
         {
-            containerType = PronomContainerSignatureIndex.FindTriggerContainerType(format.Puid);
+            containerType = PronomContainerSignatureIndex.FindTriggerContainerType(match.Format.Puid);
             if (containerType is not null)
             {
                 break;
@@ -34,12 +34,12 @@ internal static class PronomContainerMatcher
             return coreMatches;
         }
 
-        List<PronomFileFormat> formats = [];
+        List<PronomMatch> formats = [];
         foreach (var puid in puids)
         {
             if (PronomSignatureIndex.FindFormatByPuid(puid) is { } format)
             {
-                formats.Add(format);
+                formats.Add(new PronomMatch(format, Match.Full));
             }
         }
 

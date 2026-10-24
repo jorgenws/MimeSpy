@@ -52,6 +52,7 @@ public class MimeSpyTests
 
         var single = Assert.Single(result);
         Assert.Equal("fmt/141", single.Puid);
+        Assert.Equal(Match.Full, single.Match);
     }
 
     [Fact]
@@ -80,11 +81,12 @@ public class MimeSpyTests
     // not by Investigate.
 
     [Fact]
-    public void Spy_PdfHeaderWithoutTrailer_MatchesPdf_BySkippingTheEofCheck()
+    public void Spy_PdfHeaderWithoutTrailer_MatchesPdf_AsAPartialMatch()
     {
         var result = _sut.Spy(PdfHeaderOnly);
 
-        Assert.Contains(result, f => f.Extensions.Contains("pdf"));
+        var pdf = Assert.Single(result, f => f.Extensions.Contains("pdf"));
+        Assert.Equal(Match.Partial, pdf.Match);
     }
 
     [Fact]

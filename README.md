@@ -10,7 +10,7 @@ IReadOnlyList<Dossier> results = spy.Spy(bytes);
 
 foreach (var result in results)
 {
-    Console.WriteLine($"{result.MimeType} ({string.Join(", ", result.Extensions)}): {result.Name} ({result.Puid})");
+    Console.WriteLine($"{result.MimeType} ({string.Join(", ", result.Extensions)}): {result.Name} ({result.Puid}), {result.Match} match");
 }
 ```
 
@@ -19,7 +19,9 @@ MimeSpy identifies formats using [PRONOM](https://www.nationalarchives.gov.uk/PR
 - **`Spy`** is the practical default for a quick "what kind of file is this" guess from a partial read. It evaluates a signature's header (start-of-file) portion and skips any trailer check it would otherwise need - so it also reports formats PRONOM can only fully confirm by a trailer near the end of the file (PNG, JPEG, GIF, and plain ZIP among them). That means a match here isn't guaranteed to hold up once the whole file is checked - a truncated or corrupted file could pass the header check and still fail `Investigate`.
 - **`Investigate`** requires the complete file. It evaluates end-anchored signatures for real, and runs PRONOM's container-signature engine to resolve a generic ZIP/OLE2 match to its specific format (docx vs xlsx vs plain zip, doc vs xls, ...). `Investigate(Stream)` needs a seekable stream at position 0, and doesn't read it into memory: past 16 MiB it reads 8 MiB from each end, plus the container parts it needs, so a 50 GB file costs about the same as a 20 MB one. See [docs/adr/0022](docs/adr/0022-investigate-stream-requires-seeking-and-reads-bounded-windows.md) for the trade-off that involves.
 
-When two matching formats are related by PRONOM's priority data (WAV over generic RIFF, say), only the more specific one is returned ([docs/adr/0023](docs/adr/0023-droid-priority-relations-drop-outranked-matches.md)). Bytes can still genuinely match more than one unrelated format, so callers should expect more than one `Dossier` back from either method - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md). The split, what each one can and can't see, and why, is covered in [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md) and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
+When two matching formats are related by PRONOM's priority data (WAV over generic RIFF, say), only the more specific one is returned ([docs/adr/0023](docs/adr/0023-droid-priority-relations-drop-outranked-matches.md)). Bytes can still genuinely match more than one format, so callers should expect more than one `Dossier` back from either method - see [docs/adr/0001-ambiguous-matches-returned-as-ties.md](docs/adr/0001-ambiguous-matches-returned-as-ties.md).
+
+Each `Dossier` has a `Match`: `Full` when every part of the format's signature was checked, `Partial` when `Spy` skipped its end-of-file check. Results are ordered full matches first, then more specific formats before the ones they refine, so `results[0]` is the best single answer. A plain TIFF under `Spy`, for example, comes back as TIFF (full) followed by the DNG, GeoTIFF and Exif variants its header is also consistent with (partial) - see [docs/adr/0024](docs/adr/0024-dossier-reports-full-or-partial-match-and-results-are-ordered.md). The split, what each one can and can't see, and why, is covered in [docs/adr/0017](docs/adr/0017-spy-skips-eof-confirmation-instead-of-a-uniqueness-flag.md) and [docs/adr/0019](docs/adr/0019-spy-stream-adapts-to-a-known-length-not-a-detected-failure.md).
 
 Both take a `ReadOnlySpan<byte>` or a `Stream`, and the `Stream` overloads have async twins (`SpyAsync`/`InvestigateAsync`). There's no async overload of the `ReadOnlySpan<byte>` form - see [docs/adr/0014-async-overload-only-on-the-stream-api.md](docs/adr/0014-async-overload-only-on-the-stream-api.md).
 

@@ -14,3 +14,6 @@ internal sealed record PronomFileFormat(
     IReadOnlyList<string> Extensions,
     IReadOnlyList<int> InternalSignatureIds,
     IReadOnlyList<int> HasPriorityOverIds);
+
+// A format that matched, and whether every part of the signature it matched by was checked.
+internal readonly record struct PronomMatch(PronomFileFormat Format, Match Match);

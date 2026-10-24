@@ -6,8 +6,16 @@ namespace MimeSpy;
 /// means the bytes can't tell those formats apart.
 /// </summary>
 /// <remarks>
+/// <para>
+/// Where PRONOM ranks a fully matched format over another match (WAV over generic RIFF,
+/// say), only the higher one is returned. Results are ordered: <see cref="Match.Full"/>
+/// matches before <see cref="Match.Partial"/> ones, and within each, more specific formats
+/// before the ones they refine - so the first result is the best single answer.
+/// </para>
+/// <para>
 /// <see cref="MimeSpy"/> is the implementation and has no mutable state, so it can be
 /// registered as a singleton. This interface exists so callers can mock it.
+/// </para>
 /// </remarks>
 public interface IMimeSpy
 {
@@ -17,7 +25,8 @@ public interface IMimeSpy
     /// </summary>
     /// <remarks>
     /// This is what lets <c>Spy</c> report formats such as PNG, JPEG, GIF, PDF and ZIP from
-    /// a partial read, since PRONOM only fully confirms those by their trailer. The cost is
+    /// a partial read, since PRONOM only fully confirms those by their trailer; such a match
+    /// has <see cref="Dossier.Match"/> <see cref="Match.Partial"/>. The cost is
     /// that a truncated or corrupt file can match here and then not match
     /// <see cref="Investigate(ReadOnlySpan{byte})"/>. ZIP and OLE2 files are not opened, so
     /// docx, xlsx, doc, xls and similar get a less specific answer than <c>Investigate</c> gives.

@@ -81,6 +81,18 @@ public class RealSampleFileTests
         Assert.Contains(result, f => f.Extensions.Contains(expectedExtension));
     }
 
+    [Theory]
+    [MemberData(nameof(Fixtures))]
+    public void Investigate_RealSampleFile_ReturnsOnlyFullMatches(string fileName, string expectedExtension)
+    {
+        _ = expectedExtension;
+        var bytes = ReadFixture(fileName);
+
+        var result = _sut.Investigate(bytes);
+
+        Assert.All(result, f => Assert.Equal(Match.Full, f.Match));
+    }
+
     [Fact]
     public void Investigate_RealOtfFile_IsNotIdentified_KnownGap()
     {
@@ -124,6 +136,51 @@ public class RealSampleFileTests
         Assert.True(result.Count > 1, "expected the wide TIFF/DNG-family tie");
         Assert.Contains(result, f => f.Name.Contains("Digital Negative", StringComparison.Ordinal));
         Assert.Contains(result, f => f.Extensions.Contains("tiff"));
+    }
+
+    [Fact]
+    public void Spy_RealTiffFile_ListsTheFullTiffMatchFirst_ThenPartialsMostSpecificFirst()
+    {
+        // Plain TIFF's signature is header-only, so Spy checked it in full. The DNG,
+        // GeoTIFF, TIFF/EP and Exif matches skipped their EOF checks. Among those
+        // partials, PRONOM ranks DNG/GeoTIFF over TIFF/EP over Exif (docs/adr/0024).
+        var bytes = ReadFixture("sample.tiff");
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Equal("fmt/353", result[0].Puid);
+        Assert.Equal(Match.Full, result[0].Match);
+        Assert.All(result.Skip(1), f => Assert.Equal(Match.Partial, f.Match));
+        var lastDng = result.ToList().FindLastIndex(f => f.Name.Contains("Digital Negative", StringComparison.Ordinal));
+        var firstExif = result.ToList().FindIndex(f => f.Name.Contains("Exchangeable Image", StringComparison.Ordinal));
+        Assert.True(lastDng < firstExif, "DNG outranks Exif, so every DNG match comes first");
+    }
+
+    [Fact]
+    public void Spy_RealJpegFile_ListsJfifBeforeRawJpegStream_BothPartial()
+    {
+        // Both JPEG signatures check a trailer Spy skips, so neither may drop the other
+        // (docs/adr/0023), but JFIF outranks Raw JPEG Stream, so it comes first.
+        var bytes = ReadFixture("sample.jpg");
+
+        var result = _sut.Spy(bytes);
+
+        Assert.Equal(["fmt/43", "fmt/41"], result.Select(f => f.Puid));
+        Assert.All(result, f => Assert.Equal(Match.Partial, f.Match));
+    }
+
+    [Fact]
+    public void Spy_SmallSeekableStream_ReturnsInvestigatesFullMatch()
+    {
+        // The same JPEG as a stream under 8 MiB is read whole and investigated
+        // (docs/adr/0019), so its trailer is checked and JFIF is a full match alone.
+        using var stream = new MemoryStream(ReadFixture("sample.jpg"));
+
+        var result = _sut.Spy(stream);
+
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/43", single.Puid);
+        Assert.Equal(Match.Full, single.Match);
     }
 
     [Fact]

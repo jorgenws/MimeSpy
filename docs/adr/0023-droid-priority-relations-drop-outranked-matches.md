@@ -20,6 +20,8 @@ come from. Ties PRONOM doesn't resolve are still returned as ties.
 
 ## `Spy` only lets a fully-checked match outrank another
 
+> docs/adr/0024 exposes this distinction to callers as `Dossier.Match` (`Full`/`Partial`) and uses the same priority data to order results.
+
 `Spy` skips EOF-anchored sequences (docs/adr/0017), so a format can match there on
 part of its signature. Its priority is only valid if its own evidence was actually
 checked. For example, several DNG/TIFF variants outrank plain TIFF, but what tells

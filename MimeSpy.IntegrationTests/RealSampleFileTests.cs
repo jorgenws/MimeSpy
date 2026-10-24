@@ -14,68 +14,68 @@ public class RealSampleFileTests
 {
     private readonly MimeSpy _sut = new();
 
-    // File, an extension the top Investigate result must list, and the PUID each of
-    // Spy and Investigate must put first. Pinning the top result means a change that
+    // File, an extension the top Investigate result must list, the PUID each of Spy
+    // and Investigate must put first, and the top Investigate result's MimeType. Pinning the top result means a change that
     // demotes or loses a common format fails here rather than going unnoticed.
-    public static TheoryData<string, string, string, string> Fixtures => new()
+    public static TheoryData<string, string, string, string, string?> Fixtures => new()
     {
         // Images
-        { "sample.jpg", "jpg", "fmt/43", "fmt/43" },
-        { "sample.png", "png", "fmt/11", "fmt/11" },
-        { "sample.gif", "gif", "fmt/4", "fmt/4" },
-        { "sample.bmp", "bmp", "fmt/119", "fmt/119" },
-        { "sample.ico", "ico", "x-fmt/418", "x-fmt/418" },
-        { "sample.tiff", "tiff", "fmt/353", "fmt/353" },
-        { "sample.webp", "webp", "fmt/566", "fmt/566" },
-        { "sample.heic", "heic", "fmt/1101", "fmt/1101" },
+        { "sample.jpg", "jpg", "fmt/43", "fmt/43", "image/jpeg" },
+        { "sample.png", "png", "fmt/11", "fmt/11", "image/png" },
+        { "sample.gif", "gif", "fmt/4", "fmt/4", "image/gif" },
+        { "sample.bmp", "bmp", "fmt/119", "fmt/119", "image/bmp" },
+        { "sample.ico", "ico", "x-fmt/418", "x-fmt/418", "image/vnd.microsoft.icon" },
+        { "sample.tiff", "tiff", "fmt/353", "fmt/353", "image/tiff" },
+        { "sample.webp", "webp", "fmt/566", "fmt/566", "image/webp" },
+        { "sample.heic", "heic", "fmt/1101", "fmt/1101", "image/heif" },
 
         // Audio
-        { "sample.wav", "wav", "fmt/141", "fmt/141" },
-        { "sample.mp3", "mp3", "fmt/134", "fmt/134" },
-        { "sample.ogg", "ogg", "fmt/203", "fmt/203" },
-        { "sample.flac", "flac", "fmt/279", "fmt/279" },
-        { "sample.m4a", "m4a", "fmt/2094", "fmt/2094" },
+        { "sample.wav", "wav", "fmt/141", "fmt/141", "audio/x-wav" },
+        { "sample.mp3", "mp3", "fmt/134", "fmt/134", "audio/mpeg" },
+        { "sample.ogg", "ogg", "fmt/203", "fmt/203", "audio/ogg" },
+        { "sample.flac", "flac", "fmt/279", "fmt/279", "audio/flac" },
+        { "sample.m4a", "m4a", "fmt/2094", "fmt/2094", "audio/mp4" },
 
         // Video
-        { "sample.mp4", "mp4", "fmt/199", "fmt/199" },
-        { "sample.webm", "webm", "fmt/573", "fmt/573" },
-        { "sample.avi", "avi", "fmt/5", "fmt/5" },
-        { "sample.mkv", "mkv", "fmt/569", "fmt/569" },
-        { "sample.mov", "mov", "x-fmt/384", "x-fmt/384" },
-        { "sample.ogv", "ogv", "fmt/945", "fmt/945" },
+        { "sample.mp4", "mp4", "fmt/199", "fmt/199", "application/mp4" },
+        { "sample.webm", "webm", "fmt/573", "fmt/573", "video/webm" },
+        { "sample.avi", "avi", "fmt/5", "fmt/5", "video/x-msvideo" },
+        { "sample.mkv", "mkv", "fmt/569", "fmt/569", null },
+        { "sample.mov", "mov", "x-fmt/384", "x-fmt/384", "video/quicktime" },
+        { "sample.ogv", "ogv", "fmt/945", "fmt/945", "video/ogg" },
 
         // Fonts - sample.otf is deliberately not here, see
         // Investigate_RealOtfFile_IsNotIdentified_KnownGap below.
-        { "sample.ttf", "ttf", "x-fmt/453", "x-fmt/453" },
-        { "sample.woff2", "woff2", "fmt/1172", "fmt/1172" },
+        { "sample.ttf", "ttf", "x-fmt/453", "x-fmt/453", "font/ttf" },
+        { "sample.woff2", "woff2", "fmt/1172", "fmt/1172", "font/woff2" },
 
         // Archives
-        { "sample.zip", "zip", "x-fmt/263", "x-fmt/263" },
-        { "sample.gz", "gz", "x-fmt/266", "x-fmt/266" },
-        { "sample.bz2", "bz2", "x-fmt/268", "x-fmt/268" },
-        { "sample.xz", "xz", "fmt/1098", "fmt/1098" },
-        { "sample.tar", "tar", "x-fmt/265", "x-fmt/265" },
-        { "sample.7z", "7z", "fmt/484", "fmt/484" },
+        { "sample.zip", "zip", "x-fmt/263", "x-fmt/263", "application/zip" },
+        { "sample.gz", "gz", "x-fmt/266", "x-fmt/266", "application/gzip" },
+        { "sample.bz2", "bz2", "x-fmt/268", "x-fmt/268", "application/x-bzip2" },
+        { "sample.xz", "xz", "fmt/1098", "fmt/1098", null },
+        { "sample.tar", "tar", "x-fmt/265", "x-fmt/265", "application/x-tar" },
+        { "sample.7z", "7z", "fmt/484", "fmt/484", null },
 
         // Documents and zip/OLE2-based containers
-        { "sample.pdf", "pdf", "fmt/17", "fmt/17" },
-        { "sample.rtf", "rtf", "fmt/53", "fmt/53" },
-        { "sample.docx", "docx", "x-fmt/263", "fmt/412" },
-        { "sample.xlsx", "xlsx", "fmt/189", "fmt/214" },
-        { "sample.pptx", "pptx", "fmt/189", "fmt/215" },
-        { "sample.odt", "odt", "fmt/291", "fmt/291" },
-        { "sample.ods", "ods", "fmt/295", "fmt/295" },
-        { "sample.odp", "odp", "fmt/293", "fmt/293" },
-        { "sample.jar", "jar", "x-fmt/412", "x-fmt/412" },
-        { "sample.doc", "doc", "fmt/40", "fmt/40" },
-        { "sample.xls", "xls", "fmt/111", "fmt/61" },
-        { "sample.ppt", "ppt", "fmt/126", "fmt/126" },
-        { "sample.epub", "epub", "x-fmt/263", "fmt/483" },
+        { "sample.pdf", "pdf", "fmt/17", "fmt/17", "application/pdf" },
+        { "sample.rtf", "rtf", "fmt/53", "fmt/53", "application/rtf" },
+        { "sample.docx", "docx", "x-fmt/263", "fmt/412", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+        { "sample.xlsx", "xlsx", "fmt/189", "fmt/214", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+        { "sample.pptx", "pptx", "fmt/189", "fmt/215", "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
+        { "sample.odt", "odt", "fmt/291", "fmt/291", "application/vnd.oasis.opendocument.text" },
+        { "sample.ods", "ods", "fmt/295", "fmt/295", "application/vnd.oasis.opendocument.spreadsheet" },
+        { "sample.odp", "odp", "fmt/293", "fmt/293", "application/vnd.oasis.opendocument.presentation" },
+        { "sample.jar", "jar", "x-fmt/412", "x-fmt/412", "application/java-archive" },
+        { "sample.doc", "doc", "fmt/40", "fmt/40", "application/msword" },
+        { "sample.xls", "xls", "fmt/111", "fmt/61", "application/vnd.ms-excel" },
+        { "sample.ppt", "ppt", "fmt/126", "fmt/126", "application/vnd.ms-powerpoint" },
+        { "sample.epub", "epub", "x-fmt/263", "fmt/483", "application/epub+zip" },
     };
 
     [Theory]
     [MemberData(nameof(Fixtures))]
-    public void RealSampleFile_TopResultIsTheExpectedFormat(string fileName, string expectedExtension, string spyTopPuid, string investigateTopPuid)
+    public void RealSampleFile_TopResultIsTheExpectedFormat(string fileName, string expectedExtension, string spyTopPuid, string investigateTopPuid, string? expectedMimeType)
     {
         var bytes = ReadFixture(fileName);
 
@@ -85,6 +85,7 @@ public class RealSampleFileTests
         Assert.Equal(spyTopPuid, spied[0].Puid);
         Assert.Equal(investigateTopPuid, investigated[0].Puid);
         Assert.Contains(expectedExtension, investigated[0].Extensions);
+        Assert.Equal(expectedMimeType, investigated[0].MimeType);
         Assert.All(investigated, f => Assert.Equal(Match.Full, f.Match));
     }
 

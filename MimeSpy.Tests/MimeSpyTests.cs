@@ -56,6 +56,17 @@ public class MimeSpyTests
     }
 
     [Fact]
+    public void Spy_FormatWithSeveralMimeTypes_ListsThemSeparately()
+    {
+        // PRONOM stores RTF's as one comma-joined string, "application/rtf, text/rtf".
+        var result = _sut.Spy(@"{\rtf1\ansi\deff0 Hello}"u8);
+
+        Assert.NotEmpty(result);
+        Assert.All(result, f => Assert.Equal(["application/rtf", "text/rtf"], f.MimeTypes));
+        Assert.All(result, f => Assert.Equal("application/rtf", f.MimeType));
+    }
+
+    [Fact]
     public void Spy_ViaIMimeSpyReference_MatchesSameAsConcreteType()
     {
         IMimeSpy sut = _sut;

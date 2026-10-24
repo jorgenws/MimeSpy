@@ -159,7 +159,11 @@ internal static class PronomSignatureIndex
         var puid = reader.GetAttribute("PUID") ?? throw new InvalidOperationException($"FileFormat {id} is missing its PUID attribute.");
         var name = reader.GetAttribute("Name") ?? throw new InvalidOperationException($"FileFormat {id} is missing its Name attribute.");
         var version = reader.GetAttribute("Version");
-        var mimeType = reader.GetAttribute("MIMEType");
+        // PRONOM joins several MIME types into one comma-separated attribute (in
+        // alphabetical order, not by preference), e.g. "application/mp4, video/mp4".
+        string[] mimeTypes = reader.GetAttribute("MIMEType") is { } mimeTypeList
+            ? [.. mimeTypeList.Split(',').Select(t => t.Trim()).Where(t => t.Length > 0)]
+            : [];
 
         var extensions = new List<string>();
         var internalSignatureIds = new List<int>();
@@ -200,7 +204,7 @@ internal static class PronomSignatureIndex
             }
         }
 
-        return new PronomFileFormat(id, puid, name, version, mimeType, extensions, internalSignatureIds, hasPriorityOverIds);
+        return new PronomFileFormat(id, puid, name, version, mimeTypes, extensions, internalSignatureIds, hasPriorityOverIds);
     }
 
     private static int? ParseIntAttribute(XmlReader reader, string name) => PronomInternalSignatureParser.ParseIntAttribute(reader, name);

@@ -24,7 +24,7 @@ internal sealed class PronomFormatFilter
         var includedSignatureIds = new HashSet<int>();
         foreach (var format in PronomSignatureIndex.AllFormats)
         {
-            if (format.MimeType is { } mimeType && MatchesAnyPattern(mimeType, options.MimeTypes))
+            if (format.MimeTypes.Any(mimeType => MatchesAnyPattern(mimeType, options.MimeTypes)))
             {
                 includedSignatureIds.UnionWith(format.InternalSignatureIds);
             }

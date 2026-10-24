@@ -5,6 +5,9 @@ public class MimeSpyOptionsTests
     private static readonly byte[] PngBytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.png"));
     private static readonly byte[] PdfBytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.pdf"));
 
+    // PRONOM gives RTF two MIME types, "application/rtf, text/rtf".
+    private static readonly byte[] RtfBytes = @"{\rtf1\ansi\deff0 Hello}"u8.ToArray();
+
     [Fact]
     public void ImagesOnlyFilter_StillMatchesAnImage()
     {
@@ -43,6 +46,16 @@ public class MimeSpyOptionsTests
 
         Assert.Contains(sut.Investigate(PdfBytes), f => f.MimeType == "application/pdf");
         Assert.Empty(sut.Investigate(PngBytes));
+    }
+
+    [Fact]
+    public void Filter_MatchesAFormatByAnyOfItsMimeTypes_NotJustTheFirst()
+    {
+        var sut = new MimeSpy(new MimeSpyOptions { MimeTypes = ["text/"] });
+
+        var result = sut.Spy(RtfBytes);
+
+        Assert.Contains(result, f => f.MimeTypes.Contains("text/rtf"));
     }
 
     [Fact]

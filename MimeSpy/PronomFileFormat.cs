@@ -10,7 +10,7 @@ internal sealed record PronomFileFormat(
     string Puid,
     string Name,
     string? Version,
-    string? MimeType,
+    IReadOnlyList<string> MimeTypes,
     IReadOnlyList<string> Extensions,
     IReadOnlyList<int> InternalSignatureIds,
     IReadOnlyList<int> HasPriorityOverIds);

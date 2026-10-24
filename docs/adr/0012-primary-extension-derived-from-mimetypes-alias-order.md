@@ -1,5 +1,7 @@
 # PrimaryExtension is derived from mime.types' own alias order, not a hardcoded table
 
+> Superseded by [ADR 0020](0020-legacy-signature-engine-removed-in-favor-of-pronom-alone.md). `Result.PrimaryExtension` was removed with `Result`.
+
 docs/adr/0011 leaves `doc`/`dot`, `xls`/`xla`, and `ppt`/`pps` tied to each other, since
 nothing in the CFB directory structure distinguishes a document from its own
 template/add-in/slideshow variant. That's the right call for correctness - but it means

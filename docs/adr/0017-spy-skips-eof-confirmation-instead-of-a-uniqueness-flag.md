@@ -1,5 +1,7 @@
 # Spy skips EOF confirmation entirely, rather than precomputing a uniqueness flag
 
+> Still in force for `Spy`. `Sniff`, which this contrasts with, was removed in [ADR 0021](0021-sniff-removed-spy-and-investigate-are-the-only-methods.md). The internal method is now `FindHeaderMatches`.
+
 docs/adr/0016 established that `Sniff` rejects any signature carrying an
 end-of-file-anchored `ByteSequence` outright, since a leading-bytes buffer
 can't safely evaluate one. That's a real cost: checking the DROID table

@@ -1,5 +1,7 @@
 # PrimaryMimeType is computed on Result, not stored on the signature
 
+> Superseded by [ADR 0020](0020-legacy-signature-engine-removed-in-favor-of-pronom-alone.md). `Result` and its computed `PrimaryMimeType` were removed; `Dossier.MimeType` comes straight from PRONOM.
+
 `PrimaryMimeType` used to be decided in two unrelated places and just handed off
 between them. `SignatureIndex.ResolveMimeTypes` picked it once, at table-load time,
 by extension-alias count (docs/adr/0004), and stored it on `FileSignature`. `Spy`

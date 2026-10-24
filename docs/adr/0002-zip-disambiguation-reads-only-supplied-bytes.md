@@ -1,3 +1,5 @@
 # ZIP container disambiguation never seeks the central directory
 
+> Superseded by [ADR 0020](0020-legacy-signature-engine-removed-in-favor-of-pronom-alone.md). `ZipContainerSniffer` is gone; ZIP sub-formats are now resolved by PRONOM's container signatures, which read the central directory ([ADR 0022](0022-investigate-stream-requires-seeking-and-reads-bounded-windows.md)).
+
 A plain ZIP local file header is shared verbatim by dozens of formats (docx/xlsx/pptx, jar, apk, odt, epub...). The only reliable way to tell them apart is by inspecting the archive's first entry - but the authoritative source of truth for a ZIP's contents is its central directory, which lives at the *end* of the file. We decided `ZipContainerSniffer` only ever reads forward from the local file header already present in the bytes passed to `Spy`, and never seeks to or requires the central directory. This means detection can be narrowed for callers who only have a truncated prefix of a file (e.g. streamed uploads, partial reads), at the cost of occasionally falling back to the full tied list when the first entry's name or content isn't available in the supplied bytes.

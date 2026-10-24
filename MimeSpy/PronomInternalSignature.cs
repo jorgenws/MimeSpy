@@ -69,10 +69,11 @@ internal sealed record PronomByteSetToken(IReadOnlyList<byte[]> Alternatives) : 
 {
     public override bool Matches(ReadOnlySpan<byte> data, int offset)
     {
+        // Indexed rather than foreach - see PronomSignatureMatcher's loop comment.
         var candidate = data.Slice(offset, Length);
-        foreach (var alternative in Alternatives)
+        for (var i = 0; i < Alternatives.Count; i++)
         {
-            if (candidate.SequenceEqual(alternative))
+            if (candidate.SequenceEqual(Alternatives[i]))
             {
                 return true;
             }
@@ -113,15 +114,16 @@ internal sealed record PronomBytePattern(IReadOnlyList<PronomByteToken> Tokens)
             return data.Slice(start, Length).SequenceEqual(literal);
         }
 
+        // Indexed rather than foreach - see PronomSignatureMatcher's loop comment.
         var offset = start;
-        foreach (var token in Tokens)
+        for (var i = 0; i < Tokens.Count; i++)
         {
-            if (!token.Matches(data, offset))
+            if (!Tokens[i].Matches(data, offset))
             {
                 return false;
             }
 
-            offset += token.Length;
+            offset += Tokens[i].Length;
         }
 
         return true;

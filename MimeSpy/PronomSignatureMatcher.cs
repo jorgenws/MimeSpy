@@ -15,6 +15,10 @@ namespace MimeSpy;
 /// </summary>
 internal static class PronomSignatureMatcher
 {
+    // Every loop over an IReadOnlyList<T> here indexes it rather than using foreach:
+    // foreach through the interface boxes a new enumerator per loop, and the fragment
+    // search below runs its loops once per candidate position - on a large buffer
+    // that was tens of MB of garbage per call, and a measurable share of the time.
     // How a signature's end-of-file-anchored ByteSequences are treated when
     // bytes might only be a leading prefix of the real file:
     //   Ignore (Spy) - EOF sequences are skipped rather than evaluated, so a
@@ -101,15 +105,18 @@ internal static class PronomSignatureMatcher
     // only appear once).
     private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, EofPolicy eofPolicy, ref List<PronomFileFormat>? matches, ref HashSet<int>? matchedFormatIds)
     {
-        foreach (var signatureId in signatureIds)
+        for (var i = 0; i < signatureIds.Count; i++)
         {
+            var signatureId = signatureIds[i];
             if (!Matches(PronomSignatureIndex.GetSignature(signatureId), head, tail, eofPolicy))
             {
                 continue;
             }
 
-            foreach (var format in PronomSignatureIndex.FindFormatsBySignatureId(signatureId))
+            var formats = PronomSignatureIndex.FindFormatsBySignatureId(signatureId);
+            for (var j = 0; j < formats.Count; j++)
             {
+                var format = formats[j];
                 matchedFormatIds ??= [];
                 if (!matchedFormatIds.Add(format.Id))
                 {
@@ -137,19 +144,11 @@ internal static class PronomSignatureMatcher
     // BOF sequences only ever look at head, EOF sequences only ever at tail.
     private static bool Matches(PronomInternalSignature signature, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, EofPolicy eofPolicy)
     {
-        // Under Ignore, a signature made up entirely of EOF-anchored sequences (a
-        // few formats - e.g. TGA Bitmap, Apple Disk Image - are identified only by
-        // their trailer, no BOF at all) would otherwise have nothing left to check
-        // once every one of them is skipped, and match vacuously. There has to be at
-        // least one BOF sequence actually evaluated for a "guess" to mean anything.
-        if (eofPolicy == EofPolicy.Ignore && !signature.ByteSequences.Any(bs => bs.Anchor == PronomAnchor.BeginningOfFile))
-        {
-            return false;
-        }
-
         var budget = InitialProbeBudget;
-        foreach (var byteSequence in signature.ByteSequences)
+        var matchedBof = false;
+        for (var i = 0; i < signature.ByteSequences.Count; i++)
         {
+            var byteSequence = signature.ByteSequences[i];
             if (byteSequence.Anchor == PronomAnchor.EndOfFile)
             {
                 if (eofPolicy == EofPolicy.Ignore)
@@ -162,13 +161,22 @@ internal static class PronomSignatureMatcher
                     return false;
                 }
             }
-            else if (!MatchesForward(byteSequence.SubSequences, head, ref budget))
+            else if (MatchesForward(byteSequence.SubSequences, head, ref budget))
+            {
+                matchedBof = true;
+            }
+            else
             {
                 return false;
             }
         }
 
-        return true;
+        // Under Ignore, a signature made up entirely of EOF-anchored sequences (a
+        // few formats - e.g. TGA Bitmap, Apple Disk Image - are identified only by
+        // their trailer, no BOF at all) has had every one of them skipped, and would
+        // match vacuously. There has to be at least one BOF sequence actually
+        // evaluated for a "guess" to mean anything.
+        return eofPolicy == EofPolicy.Require || matchedBof;
     }
 
     // subSequences is ordered by Position ascending (1 = closest to the start of
@@ -178,8 +186,9 @@ internal static class PronomSignatureMatcher
     private static bool MatchesForward(IReadOnlyList<PronomSubSequence> subSequences, ReadOnlySpan<byte> data, ref int budget)
     {
         var cursor = 0;
-        foreach (var sub in subSequences)
+        for (var i = 0; i < subSequences.Count; i++)
         {
+            var sub = subSequences[i];
             var checkedLo = cursor + sub.MinOffset;
             var checkedHi = sub.MaxOffset is int max ? cursor + max : data.Length;
 
@@ -208,8 +217,9 @@ internal static class PronomSignatureMatcher
     private static bool MatchesBackward(IReadOnlyList<PronomSubSequence> subSequences, ReadOnlySpan<byte> data, ref int budget)
     {
         var cursor = data.Length;
-        foreach (var sub in subSequences)
+        for (var i = 0; i < subSequences.Count; i++)
         {
+            var sub = subSequences[i];
             var checkedHi = cursor - sub.MinOffset;
             var checkedLo = sub.MaxOffset is int max ? cursor - max : 0;
 
@@ -376,8 +386,9 @@ internal static class PronomSignatureMatcher
         }
 
         var group = groups[index];
-        foreach (var alternative in group.Alternatives)
+        for (var i = 0; i < group.Alternatives.Count; i++)
         {
+            var alternative = group.Alternatives[i];
             var hiEnd = cursor - group.MinOffset;
             var loEnd = cursor - group.MaxOffset;
 
@@ -420,8 +431,9 @@ internal static class PronomSignatureMatcher
         }
 
         var group = groups[index];
-        foreach (var alternative in group.Alternatives)
+        for (var i = 0; i < group.Alternatives.Count; i++)
         {
+            var alternative = group.Alternatives[i];
             var lo = cursor + group.MinOffset;
             var hi = cursor + group.MaxOffset;
             if (hi > data.Length - alternative.Length)

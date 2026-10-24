@@ -157,16 +157,18 @@ public class RealSampleFileTests
     }
 
     [Fact]
-    public void Spy_RealJpegFile_ListsJfifBeforeRawJpegStream_BothPartial()
+    public void Spy_RealJpegFile_NarrowsToJfif_AsAPartialMatch()
     {
-        // Both JPEG signatures check a trailer Spy skips, so neither may drop the other
-        // (docs/adr/0023), but JFIF outranks Raw JPEG Stream, so it comes first.
+        // JFIF and Raw JPEG Stream both need FF D9 in the last 64 KiB, which Spy skips.
+        // That shared skipped check can't separate them and the header already did, so
+        // JFIF's priority still applies (docs/adr/0023).
         var bytes = ReadFixture("sample.jpg");
 
         var result = _sut.Spy(bytes);
 
-        Assert.Equal(["fmt/43", "fmt/41"], result.Select(f => f.Puid));
-        Assert.All(result, f => Assert.Equal(Match.Partial, f.Match));
+        var single = Assert.Single(result);
+        Assert.Equal("fmt/43", single.Puid);
+        Assert.Equal(Match.Partial, single.Match);
     }
 
     [Fact]

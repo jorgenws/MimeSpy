@@ -31,15 +31,25 @@ dropped. So under `Spy` a match may only outrank others if at least one of its
 matching signatures has no EOF sequence, which means `Spy` evaluated it in full.
 `Investigate` checks every sequence, so every match may outrank.
 
-The guard costs a little: `Spy` leaves JFIF/Raw JPEG and JAR/ZIP tied, because the
-outranking signature in each pair has an EOF sequence. `Investigate` resolves both.
+That alone was too strict. It left a JPEG tied between JFIF and Raw JPEG Stream under
+`Spy`, although what tells them apart - the `JFIF` marker - is in the header, which
+`Spy` checks. The part both skipped is the same check, `FF D9` within the last 64 KiB:
+if the file has it both match, if not neither does, so skipping it can't change which
+one is right. So a partial match may also outrank another partial match when the two
+skipped exactly the same EOF check (structurally identical EOF sequences, not merely
+similar ones). 29 of the 1,231 relations have such a pair, including JFIF over Raw JPEG
+and the PNG and DXF versions over their generic forms.
+
+What's left: `Spy` still leaves JAR/ZIP tied, since their EOF checks differ, and
+DNG/GeoTIFF/Exif stay tied among themselves for the same reason. `Investigate`
+resolves both.
 
 ## Effect on the integration fixtures
 
 | Fixture | Before | After |
 |---|---|---|
 | avi, wav, webp | RIFF + the specific format (+ Waveform Audio for wav) | the specific format |
-| jpg (`Investigate`) | Raw JPEG Stream + JFIF | JFIF |
+| jpg | Raw JPEG Stream + JFIF | JFIF |
 | m4a | MPEG-4 Media + M4A Audio | M4A Audio |
 | odt, ods, odp | ODF 1.1 + 1.2 | ODF 1.2 |
 | ogg, ogv | Ogg container + Vorbis/Theora | Vorbis / Theora |

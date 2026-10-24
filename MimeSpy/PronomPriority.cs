@@ -7,8 +7,11 @@ namespace MimeSpy;
 // so a non-empty list never comes back empty. See docs/adr/0023.
 internal static class PronomPriority
 {
-    // Only a full match may outrank: a partial one matched without the part of its
-    // signature that tells it apart from what it would outrank (DNG vs TIFF under Spy).
+    // A full match may outrank any match. A partial match may only outrank another
+    // partial match that skipped exactly the same EOF check: then the skipped check can't
+    // separate them, and the checked part already did (JFIF vs Raw JPEG, both needing
+    // FF D9 in the last 64 KiB). Otherwise what tells them apart may be the part that was
+    // skipped (DNG vs TIFF under Spy).
     public static IReadOnlyList<PronomMatch> RemoveOutranked(IReadOnlyList<PronomMatch> hits)
     {
         if (hits.Count < 2)
@@ -19,16 +22,14 @@ internal static class PronomPriority
         HashSet<int>? outranked = null;
         for (var i = 0; i < hits.Count; i++)
         {
-            if (hits[i].Match != Match.Full)
-            {
-                continue;
-            }
-
             var hasPriorityOverIds = hits[i].Format.HasPriorityOverIds;
             for (var j = 0; j < hasPriorityOverIds.Count; j++)
             {
-                outranked ??= [];
-                outranked.Add(hasPriorityOverIds[j]);
+                if (hits[i].Match == Match.Full || SkippedTheSameCheck(hits[i], hits, hasPriorityOverIds[j]))
+                {
+                    outranked ??= [];
+                    outranked.Add(hasPriorityOverIds[j]);
+                }
             }
         }
 
@@ -47,6 +48,28 @@ internal static class PronomPriority
         }
 
         return kept.Count == hits.Count ? hits : kept;
+    }
+
+    private static bool SkippedTheSameCheck(PronomMatch partial, IReadOnlyList<PronomMatch> hits, int otherFormatId)
+    {
+        for (var i = 0; i < hits.Count; i++)
+        {
+            var other = hits[i];
+            if (other.Format.Id != otherFormatId || other.Match != Match.Partial)
+            {
+                continue;
+            }
+
+            foreach (var part in partial.SkippedEofParts!)
+            {
+                if (other.SkippedEofParts!.Contains(part))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     // Full matches before partial ones; within each group, a format before any format in

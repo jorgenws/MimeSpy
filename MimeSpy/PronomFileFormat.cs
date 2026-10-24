@@ -15,5 +15,7 @@ internal sealed record PronomFileFormat(
     IReadOnlyList<int> InternalSignatureIds,
     IReadOnlyList<int> HasPriorityOverIds);
 
-// A format that matched, and whether every part of the signature it matched by was checked.
-internal readonly record struct PronomMatch(PronomFileFormat Format, Match Match);
+// A format that matched, and whether every part of the signature it matched by was
+// checked. A partial match carries the EofPartKey of each signature it partially matched
+// by - the end-of-file checks it skipped.
+internal readonly record struct PronomMatch(PronomFileFormat Format, Match Match, IReadOnlyList<string>? SkippedEofParts = null);

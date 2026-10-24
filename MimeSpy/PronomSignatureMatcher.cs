@@ -63,7 +63,8 @@ internal static class PronomSignatureMatcher
     // format's own alternative signatures (PronomFileFormat.InternalSignatureIds is an OR
     // - a format with two alternative signatures that both match must still only appear
     // once). Without checkEof, a signature with an EOF sequence only matches partially;
-    // a format is a full match if any of its matching signatures was checked in full.
+    // a format is a full match if any of its matching signatures was checked in full, and
+    // otherwise remembers which EOF checks it skipped.
     private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, ref List<PronomMatch>? matches, ref Dictionary<int, int>? indexByFormatId)
     {
         for (var i = 0; i < signatureIds.Count; i++)
@@ -75,7 +76,7 @@ internal static class PronomSignatureMatcher
                 continue;
             }
 
-            var match = checkEof || signature.IsBofOnly ? Match.Full : Match.Partial;
+            var skippedEofPart = checkEof ? null : signature.EofPartKey;
             var formats = PronomSignatureIndex.FindFormatsBySignatureId(signatureId);
             for (var j = 0; j < formats.Count; j++)
             {
@@ -85,11 +86,15 @@ internal static class PronomSignatureMatcher
                 if (!indexByFormatId.TryGetValue(format.Id, out var index))
                 {
                     indexByFormatId[format.Id] = matches.Count;
-                    matches.Add(new PronomMatch(format, match));
+                    matches.Add(skippedEofPart is null
+                        ? new PronomMatch(format, Match.Full)
+                        : new PronomMatch(format, Match.Partial, [skippedEofPart]));
                 }
-                else if (match == Match.Full)
+                else if (matches[index].Match == Match.Partial)
                 {
-                    matches[index] = new PronomMatch(format, Match.Full);
+                    matches[index] = skippedEofPart is null
+                        ? new PronomMatch(format, Match.Full)
+                        : new PronomMatch(format, Match.Partial, [.. matches[index].SkippedEofParts!, skippedEofPart]);
                 }
             }
         }

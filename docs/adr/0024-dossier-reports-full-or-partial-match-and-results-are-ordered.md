@@ -24,8 +24,8 @@ would leave only TIFF and hide the format the file actually is.
   TIFF/EP, then Exif; for a `Spy` of a JPEG, JFIF then Raw JPEG Stream. The first
   result is therefore a sensible single answer, without hiding the rest.
 
-Only a full match may drop another by priority (docs/adr/0023's guard); this ADR makes
-that same distinction visible to callers.
+docs/adr/0023's guard on which matches may drop another by priority rests on the same
+distinction; this ADR makes it visible to callers.
 
 ## Naming
 

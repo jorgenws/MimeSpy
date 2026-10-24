@@ -7,8 +7,9 @@ namespace MimeSpy;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Where PRONOM ranks a fully matched format over another match (WAV over generic RIFF,
-/// say), only the higher one is returned. Results are ordered: <see cref="Match.Full"/>
+/// Where PRONOM ranks one matching format over another (WAV over generic RIFF, say), only
+/// the higher one is returned - unless the higher one is a <see cref="Match.Partial"/> match
+/// whose skipped check could still rule it out, in which case both are returned. Results are ordered: <see cref="Match.Full"/>
 /// matches before <see cref="Match.Partial"/> ones, and within each, more specific formats
 /// before the ones they refine - so the first result is the best single answer.
 /// </para>

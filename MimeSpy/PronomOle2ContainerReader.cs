@@ -152,21 +152,37 @@ internal sealed class PronomOle2ContainerReader
     // comparison-against-a-stripped-name to pick the correct branch could walk past
     // the very entry being looked for. Directory sizes here are always small (a
     // handful of entries), so the lost O(log n) doesn't cost anything real.
+    //
+    // The walk is iterative and visits each entry at most once: Left/Right come from
+    // the file, so a corrupt or hostile one can point back into its own tree, and
+    // following that recursively would overflow the stack - which no caller can catch.
     private int? FindChild(uint nodeId, string name)
     {
-        if (nodeId == NoStream || nodeId >= (uint)_entries.Count)
+        var visited = new bool[_entries.Count];
+        var pending = new Stack<uint>();
+        pending.Push(nodeId);
+
+        while (pending.Count > 0)
         {
-            return null;
+            var id = pending.Pop();
+            if (id >= (uint)_entries.Count || visited[id])
+            {
+                continue;
+            }
+
+            visited[id] = true;
+            var entry = _entries[(int)id];
+            var entryName = entry.Name.Length > 0 && entry.Name[0] < 0x20 ? entry.Name[1..] : entry.Name;
+            if (string.Equals(entryName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return (int)id;
+            }
+
+            pending.Push(entry.Right);
+            pending.Push(entry.Left);
         }
 
-        var entry = _entries[(int)nodeId];
-        var entryName = entry.Name.Length > 0 && entry.Name[0] < 0x20 ? entry.Name[1..] : entry.Name;
-        if (string.Equals(entryName, name, StringComparison.OrdinalIgnoreCase))
-        {
-            return (int)nodeId;
-        }
-
-        return FindChild(entry.Left, name) ?? FindChild(entry.Right, name);
+        return null;
     }
 
     private List<DirectoryEntry> ReadDirectoryEntries(uint firstDirectorySector)
@@ -225,8 +241,9 @@ internal sealed class PronomOle2ContainerReader
         }
 
         // A stream can't be bigger than the file holding it - checked before
-        // allocating, so a corrupt size field can't ask for an absurd buffer.
-        if (length > _length)
+        // allocating, so a corrupt size field can't ask for an absurd buffer. Negative
+        // is a 64-bit size field with its top bit set, cast to long.
+        if (length < 0 || length > _length)
         {
             return null;
         }
@@ -274,7 +291,7 @@ internal sealed class PronomOle2ContainerReader
         }
 
         var miniStream = GetMiniStream();
-        if (miniStream is null || length > miniStream.Length)
+        if (miniStream is null || length < 0 || length > miniStream.Length)
         {
             return null;
         }

@@ -99,6 +99,7 @@ group's `MaxOffset` plus its longest alternative, over all its `SubSequence`s.
 
 ## What this doesn't bound
 
+(Superseded for ZIP entries by docs/adr/0028, which reads only their first 64 KB.)
 Container refinement still loads each ZIP entry or OLE2 stream it checks
 completely into memory, and checks run against named entries like
 `[Content_Types].xml`, `mimetype` and `WordDocument`. Those are usually small, but

@@ -7,12 +7,9 @@ namespace MimeSpy;
 // type, resolving to whichever more specific PUIDs match instead.
 internal static class PronomContainerMatcher
 {
-    // file is the complete file, seekable, at position 0. The readers need random access
-    // to it (a ZIP's central directory is at the end, OLE2 entries can be anywhere) and
-    // read only what they need, in place. Its position is left wherever they stopped.
-    // coreMatches is FindFullMatches' result for the same file. A container result the
-    // filter doesn't allow is dropped; if none is left, coreMatches stands - minus any
-    // container trigger the filter kept only so this check could run.
+    // file is the complete file, seekable, at position 0 - the readers need random access
+    // to it (a ZIP's central directory is at the end, OLE2 entries can be anywhere).
+    // coreMatches is FindFullMatches' result for the same file.
     public static IReadOnlyList<PronomMatch> Refine(Stream file, IReadOnlyList<PronomMatch> coreMatches, PronomFormatFilter? filter)
     {
         string? containerType = null;
@@ -49,7 +46,6 @@ internal static class PronomContainerMatcher
         // DROID FileFormatCollection (shouldn't happen in practice, PRONOM's PUID
         // space is unified - but if it ever did, falling back to the generic
         // container match beats claiming a format this library can't describe).
-        // DROID applies the same priorities to container hits as to binary ones.
         return formats.Count > 0 ? PronomPriority.Order(PronomPriority.RemoveOutranked(formats)) : OnlyAllowed(coreMatches, filter);
     }
 

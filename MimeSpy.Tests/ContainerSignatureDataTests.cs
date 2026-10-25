@@ -1,9 +1,7 @@
 namespace MimeSpy.Tests;
 
-// The ZIP reader only inflates the first PronomZipContainerReader.EntryPrefixLength
-// bytes of an entry (docs/adr/0028). That's only safe while PRONOM's ZIP container
-// signatures look at the start of an entry and nowhere else - these fail when an update
-// to pronom-container-signatures.xml breaks that.
+// Guards the assumption docs/adr/0028 rests on, against updates to
+// pronom-container-signatures.xml.
 public class ContainerSignatureDataTests
 {
     private static readonly IReadOnlyList<PronomContainerSignature> ZipSignatures =

@@ -1,16 +1,8 @@
 namespace MimeSpy;
 
-// The formats MimeSpyOptions allows - matching MimeTypes (if any) and none of
-// ExcludedMimeTypes - and the signatures they reference, bucketed by required first byte
-// the same way PronomSignatureIndex is. Built once per MimeSpy instance. Narrowing the
-// signatures skips most of the work; Allows then drops any disallowed format a shared
-// signature or a container check still produced, before priority is applied, so an
-// excluded format can neither appear nor outrank one that's allowed.
-//
-// The container-trigger formats (generic ZIP, Office Open XML, OLE2) are the one
-// exception: Investigate still matches them when they're disallowed, because opening the
-// container is the only way to reach docx/xlsx/doc and the like. They're kept only for
-// that check - they can't outrank anything, and Refine removes them before returning.
+// The formats MimeSpyOptions allows, and the signatures they reference plus the
+// container triggers' (docs/adr/0027), bucketed by required first byte the same way
+// PronomSignatureIndex is. Built once per MimeSpy instance.
 internal sealed class PronomFormatFilter
 {
     public IReadOnlyList<int> SignatureIdsWithoutFixedFirstByte { get; }
@@ -83,8 +75,6 @@ internal sealed class PronomFormatFilter
         return new PronomFormatFilter(signatureIdsByFirstByte, signatureIdsWithoutFixedFirstByte, allowedFormatIds, containerTriggerFormatIds);
     }
 
-    // A case-insensitive starting-with match, nothing more - see MimeSpyOptions.MimeTypes'
-    // doc for why there's no separate wildcard syntax.
     private static bool MatchesAnyPattern(string mimeType, IReadOnlyList<string> patterns)
     {
         foreach (var pattern in patterns)

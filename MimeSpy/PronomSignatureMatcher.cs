@@ -17,16 +17,12 @@ internal static class PronomSignatureMatcher
     // search below runs its loops once per candidate position - on a large buffer
     // that was tens of MB of garbage per call, and a measurable share of the time.
 
-    // For Spy: bytes may be only a leading prefix, so EOF-anchored sequences are skipped
-    // (docs/adr/0017). A match here may not survive FindFullMatches on the whole file.
-    // Two formats sharing a BOF (e.g. TIFF/DNG) both match - a tie, not a guess.
+    // For Spy: EOF-anchored sequences are skipped (docs/adr/0017).
     public static IReadOnlyList<PronomMatch> FindHeaderMatches(ReadOnlySpan<byte> bytes, PronomFormatFilter? filter = null) => FindMatches(bytes, bytes, checkEof: false, filter);
 
     // For Investigate: BOF sequences are matched against head (starting at the file's
     // first byte), EOF sequences against tail (ending at its last byte). Pass the same
-    // span twice for a whole file in memory, or a window onto each end of a large one;
-    // each side's offsets are relative to its own end, so only an unbounded gap that
-    // runs past its window is affected.
+    // span twice for a whole file in memory, or a window onto each end of a large one.
     public static IReadOnlyList<PronomMatch> FindFullMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, PronomFormatFilter? filter = null) => FindMatches(head, tail, checkEof: true, filter);
 
     // One signature against complete content - a container entry, for PronomContainerMatcher.
@@ -62,10 +58,7 @@ internal static class PronomSignatureMatcher
     // indexByFormatId dedupes across the two candidate sets above, and across a single
     // format's own alternative signatures (PronomFileFormat.InternalSignatureIds is an OR
     // - a format with two alternative signatures that both match must still only appear
-    // once). Without checkEof, a signature with an EOF sequence only matches partially;
-    // a format is a full match if any of its matching signatures was checked in full, and
-    // otherwise remembers which EOF checks it skipped. A format the filter doesn't allow
-    // is skipped even when a signature it shares with an allowed one matches.
+    // once). A partial match remembers which EOF checks it skipped, for PronomPriority.
     private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter, ref List<PronomMatch>? matches, ref Dictionary<int, int>? indexByFormatId)
     {
         for (var i = 0; i < signatureIds.Count; i++)
@@ -83,7 +76,7 @@ internal static class PronomSignatureMatcher
             {
                 var format = formats[j];
                 // With checkEof (Investigate), a disallowed container trigger is kept for
-                // PronomContainerMatcher - see PronomFormatFilter.
+                // PronomContainerMatcher (docs/adr/0027).
                 if (filter is not null && !filter.Allows(format) && !(checkEof && filter.IsContainerTrigger(format)))
                 {
                     continue;

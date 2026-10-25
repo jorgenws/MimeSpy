@@ -1,18 +1,9 @@
 namespace MimeSpy;
 
-// DROID's own tie-break: when two matched formats are related by PRONOM's
-// HasPriorityOverFileFormatID (e.g. PDF/A over the plain PDF it also matches), the
-// outranked one is dropped. Same single pass as DROID's removeLowerPriorityHits: collect
-// every ID any hit outranks, then drop those hits. PRONOM's priority graph is acyclic,
-// so a non-empty list never comes back empty. See docs/adr/0023.
+// PRONOM's HasPriorityOverFileFormatID relations: which matches they drop
+// (docs/adr/0023) and how they order what's left (docs/adr/0024).
 internal static class PronomPriority
 {
-    // A full match may outrank any match. A partial match may only outrank another
-    // partial match that skipped exactly the same EOF check: then the skipped check can't
-    // separate them, and the checked part already did (JFIF vs Raw JPEG, both needing
-    // FF D9 in the last 64 KiB). Otherwise what tells them apart may be the part that was
-    // skipped (DNG vs TIFF under Spy). A hit the filter doesn't allow (a container trigger
-    // kept only for the container check) outranks nothing.
     public static IReadOnlyList<PronomMatch> RemoveOutranked(IReadOnlyList<PronomMatch> hits, PronomFormatFilter? filter = null)
     {
         if (hits.Count < 2)
@@ -78,10 +69,8 @@ internal static class PronomPriority
         return false;
     }
 
-    // Full matches before partial ones; within each group, a format before any format in
-    // the same group it outranks (DNG before the TIFF it refines), otherwise in the order
-    // found. A stable topological sort - lists are a handful long, so the quadratic scan
-    // is cheaper than building a graph.
+    // A stable topological sort - lists are a handful long, so the quadratic scan is
+    // cheaper than building a graph.
     public static IReadOnlyList<PronomMatch> Order(IReadOnlyList<PronomMatch> hits)
     {
         if (hits.Count < 2)

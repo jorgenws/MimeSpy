@@ -1,8 +1,7 @@
 namespace MimeSpy;
 
 // Read-until-full loops over Stream.Read(byte[], int, int), which is allowed to return
-// fewer bytes than asked for even mid-stream - netstandard2.0 has no
-// Stream.ReadAtLeast/ReadExactly to lean on instead.
+// fewer bytes than asked for even mid-stream.
 internal static class StreamReading
 {
     // Reads until count bytes are in, or the stream ends. Returns how many were read.

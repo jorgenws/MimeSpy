@@ -6,23 +6,16 @@ namespace MimeSpy;
 // via the framework's own ZipArchive (which seeks to the central directory at the end
 // of the file, so this only ever makes sense against the complete file, never a leading
 // prefix). Reads the stream it's given in place - only the central directory and the
-// entries actually asked for are ever read, and of those only their first
-// EntryPrefixLength bytes are ever decompressed.
+// entries actually asked for are ever read.
 internal sealed class PronomZipContainerReader : IDisposable
 {
-    // PRONOM's ZIP container signatures only ever look at the start of an entry, and
-    // the bounded ones within ~40 KB of it, so inflating further would only ever cost
-    // memory - unboundedly so for a zip bomb, whose tiny entry inflates to gigabytes.
-    // An unbounded search ("this string anywhere in the entry") covers just this prefix,
-    // the same 64 KB DROID's own default profile scans. See docs/adr/0028;
-    // ContainerSignatureDataTests fails if a PRONOM update stops this being enough.
+    // docs/adr/0028.
     internal const int EntryPrefixLength = 64 * 1024;
 
     private readonly ZipArchive _archive;
 
-    // PronomContainerMatcher tries every ZIP container signature PRONOM has (not just
-    // ones plausible for this file - see PronomContainerMatcher's own comment), and
-    // many of them name the same entry (e.g. "[Content_Types].xml" alone appears in
+    // PronomContainerMatcher tries every ZIP container signature PRONOM has, not just
+    // ones plausible for this file, and many of them name the same entry (e.g. "[Content_Types].xml" alone appears in
     // 32 of them) - caching by path, for this reader's lifetime (one Refine() call),
     // turns those back into a single decompression instead of one per signature that
     // asks for it.
@@ -78,9 +71,6 @@ internal sealed class PronomZipContainerReader : IDisposable
             return null;
         }
 
-        // Length is the archive's own claim. Sizing the buffer by it saves allocating the
-        // full prefix for a small entry, but the read stops at the buffer's end either way,
-        // so a claim that's too large can't make it read more.
         var prefix = new byte[Math.Min(entry.Length, EntryPrefixLength)];
         int read;
         try

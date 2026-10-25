@@ -25,27 +25,16 @@ public sealed partial class MimeSpy : IMimeSpy
         }
     }
 
-    // How much of a Stream to read for Spy's bounded-peek fallback (non-seekable, or
-    // seekable but larger than SpyFullReadThreshold below). There's no small fixed
-    // byte count that reaches every PRONOM signature: most anchors sit in the first
-    // few hundred bytes, but a handful probe up to several thousand, and a few
-    // (BibTeX-style text formats) up to 15000 - so this is a chosen, revisable
-    // default balancing thoroughness against not reading a possibly-large file in
-    // full just to peek its header.
+    // There's no small fixed byte count that reaches every PRONOM signature: most
+    // anchors sit in the first few hundred bytes, but a handful probe up to several
+    // thousand, and a few (BibTeX-style text formats) up to 15000 - so this is a
+    // chosen, revisable default.
     private const int SpyPeekReadSize = 65536;
 
-    // How much a Stream is worth fully buffering under Spy before falling back to
-    // the bounded peek above - see docs/adr/0019. Chosen the same way: comfortably
-    // past everyday documents/images/audio, well short of "unboundedly large" so a
-    // caller who wanted a cheap peek never gets surprised by Spy quietly reading
-    // gigabytes.
+    // docs/adr/0019.
     private const long SpyFullReadThreshold = 8 * 1024 * 1024;
 
-    // How much of each end of a Stream Investigate reads for the core signature match
-    // - see docs/adr/0022. A stream no longer than twice this is read whole instead
-    // (the two windows would overlap anyway). Every bounded PRONOM signature reaches
-    // well under 1% of this from its end of the file; only unbounded gaps can reach
-    // further, and those get cut off here rather than searching the whole file.
+    // docs/adr/0022.
     private const int InvestigateWindowSize = 8 * 1024 * 1024;
 
     /// <inheritdoc/>
@@ -56,11 +45,6 @@ public sealed partial class MimeSpy : IMimeSpy
     {
         ThrowIfNullOrNotAtStart(stream);
 
-        // If the stream can tell us up front that it's small, read it all and get
-        // Investigate's fully-confirmed answer (real EOF check, container engine)
-        // instead of the peek-and-skip-EOF fallback below - see docs/adr/0019 for
-        // why this is gated on a fact we already have (the stream's own reported
-        // length), not on trying Investigate and detecting whether it "worked".
         if (CanPromoteToInvestigate(stream))
         {
             return Investigate(stream);
@@ -100,9 +84,6 @@ public sealed partial class MimeSpy : IMimeSpy
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Investigate(ReadOnlySpan<byte> bytes)
     {
-        // A caller-supplied span isn't necessarily backed by an array this method
-        // can keep past the call (or wrap in a Stream for the container readers), so
-        // this copy is the one truly unavoidable one.
         var array = bytes.ToArray();
         return InvestigateInMemory(array, array.Length);
     }
@@ -136,9 +117,6 @@ public sealed partial class MimeSpy : IMimeSpy
         return InvestigateAsyncCore(stream, cancellationToken);
     }
 
-    // Only the window reads are async. A ZIP/OLE2 file larger than both windows is
-    // then refined by reading the live stream synchronously - ZipArchive has no async
-    // open on netstandard2.0, and the OLE2 reader is sync throughout.
     private async Task<IReadOnlyList<Dossier>> InvestigateAsyncCore(Stream stream, CancellationToken cancellationToken)
     {
         var length = stream.Length;
@@ -159,9 +137,6 @@ public sealed partial class MimeSpy : IMimeSpy
         return InvestigateCore(head.AsSpan(0, headRead), tail.AsSpan(0, tailRead), stream);
     }
 
-    // Seeking is what lets Investigate read just the two ends of a large file, and
-    // hand the container readers random access to the rest, instead of buffering the
-    // whole thing - see docs/adr/0022.
     private static void ThrowIfNotInvestigable(Stream stream)
     {
         ThrowIfNullOrNotAtStart(stream);
@@ -174,11 +149,6 @@ public sealed partial class MimeSpy : IMimeSpy
         }
     }
 
-    // The whole stream is the file. A seekable stream somewhere other than 0 has
-    // almost always been read from already and not rewound (e.g. a MemoryStream just
-    // written to, left at its end) - reading on from there would silently inspect the
-    // wrong bytes, so it's rejected instead. A non-seekable stream has no position to
-    // check, and is read from wherever it is. See docs/adr/0022.
     private static void ThrowIfNullOrNotAtStart(Stream stream)
     {
         if (stream is null)
@@ -194,8 +164,6 @@ public sealed partial class MimeSpy : IMimeSpy
         }
     }
 
-    // The whole file is in bytes[..length]: both ends of it are right there, and the
-    // container readers read it through a no-copy MemoryStream wrapper.
     private IReadOnlyList<Dossier> InvestigateInMemory(byte[] bytes, int length)
     {
         using var file = new MemoryStream(bytes, 0, length, writable: false);

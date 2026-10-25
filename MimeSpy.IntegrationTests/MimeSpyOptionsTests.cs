@@ -30,9 +30,7 @@ public class MimeSpyOptionsTests
     [InlineData(new[] { "application/vnd.ms-excel" }, new string[0], "sample.xls", "fmt/61")]
     public void Investigate_ContainerFormat_IsFoundOrFallsBackByTheFilter(string[] mimeTypes, string[] excludedMimeTypes, string fileName, string expectedPuid)
     {
-        // Reaching docx/xlsx/epub/xls means matching the generic ZIP/OLE2 format and opening
-        // the container, even when the filter leaves that generic format out - and when
-        // the specific format is the one left out, the answer falls back to the container.
+        // docs/adr/0027.
         var sut = new MimeSpy(new MimeSpyOptions { MimeTypes = mimeTypes, ExcludedMimeTypes = excludedMimeTypes });
 
         var result = sut.Investigate(ReadFixture(fileName));

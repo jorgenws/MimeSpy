@@ -41,9 +41,8 @@ internal sealed class PronomOle2ContainerReader
     private byte[]? _miniFat;
     private byte[]? _miniStream;
 
-    // PronomContainerMatcher tries every OLE2 container signature PRONOM has (not
-    // just ones plausible for this file - see PronomContainerMatcher's own comment),
-    // and many of them name the same stream (e.g. "SummaryInformation" alone appears
+    // PronomContainerMatcher tries every OLE2 container signature PRONOM has, not just
+    // ones plausible for this file, and many of them name the same stream (e.g. "SummaryInformation" alone appears
     // in 25 of them) - caching by path, for this reader's lifetime (one Refine()
     // call), turns those back into a single sector-chain walk and copy instead of one
     // per signature that asks for it.

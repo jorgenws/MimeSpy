@@ -119,12 +119,7 @@ public class RealSampleFileTests
     [Fact]
     public void Spy_RealTiffFile_ReturnsWideAmbiguousTieIncludingDigitalNegativeVariants()
     {
-        // The scenario docs/adr/0017 describes by name: TIFF and its Digital
-        // Negative (DNG) variant share the same BOF bytes, and Spy skips the
-        // EOF/structure check that would tell them apart - so a real TIFF
-        // file matches every DNG/TIFF-family PUID that shares its header, not
-        // just the one it actually is. Several of those outrank plain TIFF, but
-        // only on evidence Spy skipped, so priority doesn't drop it (docs/adr/0023).
+        // docs/adr/0017, 0023.
         var bytes = ReadFixture("sample.tiff");
 
         var result = _sut.Spy(bytes);
@@ -137,9 +132,7 @@ public class RealSampleFileTests
     [Fact]
     public void Spy_RealTiffFile_ListsTheFullTiffMatchFirst_ThenPartialsMostSpecificFirst()
     {
-        // Plain TIFF's signature is header-only, so Spy checked it in full. The DNG,
-        // GeoTIFF, TIFF/EP and Exif matches skipped their EOF checks. Among those
-        // partials, PRONOM ranks DNG/GeoTIFF over TIFF/EP over Exif (docs/adr/0024).
+        // docs/adr/0024.
         var bytes = ReadFixture("sample.tiff");
 
         var result = _sut.Spy(bytes);
@@ -155,9 +148,7 @@ public class RealSampleFileTests
     [Fact]
     public void Spy_RealJpegFile_NarrowsToJfif_AsAPartialMatch()
     {
-        // JFIF and Raw JPEG Stream both need FF D9 in the last 64 KiB, which Spy skips.
-        // That shared skipped check can't separate them and the header already did, so
-        // JFIF's priority still applies (docs/adr/0023).
+        // docs/adr/0023.
         var bytes = ReadFixture("sample.jpg");
 
         var result = _sut.Spy(bytes);
@@ -170,8 +161,7 @@ public class RealSampleFileTests
     [Fact]
     public void Spy_SmallSeekableStream_ReturnsInvestigatesFullMatch()
     {
-        // The same JPEG as a stream under 8 MiB is read whole and investigated
-        // (docs/adr/0019), so its trailer is checked and JFIF is a full match alone.
+        // docs/adr/0019.
         using var stream = new MemoryStream(ReadFixture("sample.jpg"));
 
         var result = _sut.Spy(stream);
@@ -184,9 +174,6 @@ public class RealSampleFileTests
     [Fact]
     public void Investigate_RealTiffFile_NarrowsToPlainTiffAlone()
     {
-        // Unlike Spy above, Investigate runs the real structure check and
-        // correctly narrows this file down to plain TIFF, dropping every DNG
-        // alternative Spy couldn't rule out from the header alone.
         var bytes = ReadFixture("sample.tiff");
 
         var result = _sut.Investigate(bytes);
@@ -198,9 +185,6 @@ public class RealSampleFileTests
     [Fact]
     public void Spy_RealDocxFile_OnlyMatchesGenericZip_ContainerEngineNeedsInvestigate()
     {
-        // Spy never runs PRONOM's container-signature engine (docs/adr/0016) -
-        // that needs the complete file - so a real docx only ever matches the
-        // generic ZIP PUID under Spy, not its own docx-specific one.
         var bytes = ReadFixture("sample.docx");
 
         var result = _sut.Spy(bytes);
@@ -227,9 +211,8 @@ public class RealSampleFileTests
     [InlineData("sample.odp", "fmt/293", "odp", "otp")]
     public void Investigate_RealOdfFile_NarrowsToOdf12_WhichStillCarriesItsTemplateExtension(string fileName, string expectedPuid, string expectedExtension, string templateExtension)
     {
-        // The container engine matches both ODF 1.1 and 1.2 PUIDs for each family;
-        // PRONOM gives 1.2 priority (docs/adr/0023). A document still can't be told
-        // from its own template - each PUID carries both extensions.
+        // ODF 1.2 outranks 1.1 (docs/adr/0023). Each PUID carries both the document and
+        // its template's extension.
         var bytes = ReadFixture(fileName);
 
         var result = _sut.Investigate(bytes);
@@ -268,9 +251,6 @@ public class RealSampleFileTests
     [Fact]
     public void Investigate_RealEpubFile_NarrowsToEpub()
     {
-        // Unlike the old Gary-Kessler-table engine (which had a documented
-        // known gap here - see git history), PRONOM's container engine
-        // correctly resolves this real epub to its own PUID.
         var bytes = ReadFixture("sample.epub");
 
         var result = _sut.Investigate(bytes);

@@ -206,15 +206,12 @@ internal static class PronomSignatureIndex
         return new PronomFileFormat(id, puid, name, version, mimeTypes, extensions, internalSignatureIds, hasPriorityOverIds);
     }
 
-    // PRONOM joins several MIME types into one comma-separated attribute (in
-    // alphabetical order, not by preference), e.g. "application/mp4, video/mp4".
+    // PRONOM joins several MIME types into one comma-separated attribute, e.g.
+    // "application/mp4, video/mp4".
     private static string[] SplitMimeTypes(string? mimeTypeList) =>
         mimeTypeList is null ? [] : [.. mimeTypeList.Split(',').Select(t => t.Trim()).Where(t => t.Length > 0)];
 
-    // Fills in MIME types PRONOM leaves empty for a handful of common formats
-    // (docs/adr/0026). Only fills gaps: an entry for an unknown PUID, or one PRONOM has
-    // since given a type, throws, so a stale entry fails the first test run after a
-    // signature-file refresh instead of lingering.
+    // docs/adr/0026.
     private static void ApplyMimeTypeAdditions(List<PronomFileFormat> formats)
     {
         using var stream = typeof(PronomSignatureIndex).Assembly.GetManifestResourceStream(MimeTypeAdditionsResourceName)

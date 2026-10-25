@@ -85,12 +85,6 @@ public class MimeSpyTests
         Assert.Equal(first, second);
     }
 
-    // The Spy/Investigate contract itself (docs/adr/0017, 0019): Spy evaluates a
-    // signature's BOF portion but skips (rather than requires) its EOF check, while
-    // Investigate requires it against the buffer's real end - so a merely-partial
-    // buffer that happens to satisfy a format's BOF portion is caught by Spy but
-    // not by Investigate.
-
     [Fact]
     public void Spy_PdfHeaderWithoutTrailer_MatchesPdf_AsAPartialMatch()
     {
@@ -103,9 +97,6 @@ public class MimeSpyTests
     [Fact]
     public void Investigate_PdfHeaderWithoutTrailer_ReturnsNoMatch_BecauseTheTruncatedBufferHasNoRealTrailer()
     {
-        // Safe, not wrong: the missing "%%EOF" trailer just isn't found against
-        // this buffer's own (truncated) end, so Investigate correctly reports no
-        // match rather than a false positive - see docs/adr/0019.
         var result = _sut.Investigate(PdfHeaderOnly);
 
         Assert.Empty(result);
@@ -144,8 +135,6 @@ public class MimeSpyTests
     [MemberData(nameof(StreamMethods))]
     public void Stream_SeekableStreamNotAtStart_Throws(StreamMethod method)
     {
-        // E.g. a MemoryStream just written to and not rewound - reading on from its
-        // current position would inspect the wrong bytes (here, none at all).
         using var stream = new MemoryStream(WavBytes);
         stream.Position = stream.Length;
 
@@ -211,10 +200,6 @@ public class MimeSpyTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => method.Invoke(_sut, stream, cts.Token));
     }
 
-    // Spy(Stream)/SpyAsync's length-adaptive promotion (docs/adr/0019): a small
-    // enough seekable stream gets read in full and handed to Investigate for its
-    // fully-confirmed answer, instead of the bounded, EOF-skipping peek.
-
     [Fact]
     public void Spy_SmallSeekableStream_PromotesToInvestigatesFullyConfirmedAnswer()
     {
@@ -243,8 +228,6 @@ public class MimeSpyTests
             viaSpyStream.Select(f => f.Puid).OrderBy(p => p));
     }
 
-    // Investigate(Stream)'s seekable-only contract and windowed reads (docs/adr/0022).
-
     public static TheoryData<StreamMethod> InvestigateStreamMethods => new()
     {
         new StreamMethod("Investigate", (sut, stream) => sut.Investigate(stream)),
@@ -259,7 +242,6 @@ public class MimeSpyTests
 
         Assert.Throws<ArgumentException>(() => method.Invoke(_sut, nonSeekable));
     }
-
 
     public static TheoryData<string, string> EofAnchoredFixtures => new()
     {

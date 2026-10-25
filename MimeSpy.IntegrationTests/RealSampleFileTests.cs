@@ -37,7 +37,7 @@ public class RealSampleFileTests
         { "sample.m4a", "m4a", "fmt/2094", "fmt/2094", "audio/mp4" },
 
         // Video
-        { "sample.mp4", "mp4", "fmt/199", "fmt/199", "application/mp4" },
+        { "sample.mp4", "mp4", "fmt/199", "fmt/199", "video/mp4" },
         { "sample.webm", "webm", "fmt/573", "fmt/573", "video/webm" },
         { "sample.avi", "avi", "fmt/5", "fmt/5", "video/x-msvideo" },
         { "sample.mkv", "mkv", "fmt/569", "fmt/569", "video/x-matroska" },

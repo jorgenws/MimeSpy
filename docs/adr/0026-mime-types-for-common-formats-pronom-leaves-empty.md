@@ -1,5 +1,7 @@
 # MIME types for common formats PRONOM leaves empty come from a small overlay file
 
+> Amended by [ADR 0029](0029-mime-type-overlay-corrects-pronom-not-just-fills-gaps.md): the overlay may now correct a type PRONOM gives, not only fill an empty one. Every entry states the PRONOM value it was written against. The guidance below on choosing types still holds.
+
 1,790 of the 2,571 formats in PRONOM's DROID file have no MIME type, among them formats
 people meet daily: 7z, Matroska, xz, AVIF, MPEG-1/2 video, MPEG transport streams, ISO
 images. For a MIME-type library, `null` for a 7z file is a miss. The engine removed in

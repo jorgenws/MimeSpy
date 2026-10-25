@@ -102,7 +102,7 @@ Both signature tables are [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/)'
 
 Contains public sector information licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
 
-PRONOM gives most formats no MIME type, including some common ones (7z, Matroska, xz, AVIF, MPEG video, ISO images). `Resources/mimespy-mime-types.xml` fills those in for a short, hand-checked list, using Apache httpd's `mime.types`; it never overrides a type PRONOM gives. See [docs/adr/0026](docs/adr/0026-mime-types-for-common-formats-pronom-leaves-empty.md).
+PRONOM gives most formats no MIME type, including some common ones (7z, Matroska, xz, AVIF, MPEG video, ISO images). `Resources/mimespy-mime-types.xml` fills those in for a short, hand-checked list, using Apache httpd's `mime.types`. The same file corrects types PRONOM does give where they're unhelpful. For example, PRONOM lists MP4's types alphabetically, so `application/mp4` would come first; MimeSpy puts `video/mp4` first. Each correction states the PRONOM value it was written against, and loading fails if PRONOM has since changed it, so a PRONOM update is never silently overwritten. See [docs/adr/0026](docs/adr/0026-mime-types-for-common-formats-pronom-leaves-empty.md) and [docs/adr/0029](docs/adr/0029-mime-type-overlay-corrects-pronom-not-just-fills-gaps.md).
 
 ## License
 

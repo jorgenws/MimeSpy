@@ -10,7 +10,6 @@ namespace MimeSpy;
 internal static class PronomSignatureIndex
 {
     private const string ResourceName = "pronom-droid-signatures.xml";
-    private const string MimeTypeAdditionsResourceName = "mimespy-mime-types.xml";
 
     private static readonly Dictionary<int, PronomInternalSignature> SignaturesById;
     private static readonly Dictionary<string, PronomFileFormat> FormatByPuid;
@@ -52,7 +51,11 @@ internal static class PronomSignatureIndex
             }
         }
 
-        ApplyMimeTypeAdditions(formats);
+        using (var corrections = typeof(PronomSignatureIndex).Assembly.GetManifestResourceStream(PronomMimeTypeCorrections.ResourceName)
+            ?? throw new InvalidOperationException($"Embedded resource '{PronomMimeTypeCorrections.ResourceName}' not found."))
+        {
+            PronomMimeTypeCorrections.Apply(formats, corrections);
+        }
 
         SignaturesById = signaturesById;
         AllFormats = formats;
@@ -208,58 +211,8 @@ internal static class PronomSignatureIndex
 
     // PRONOM joins several MIME types into one comma-separated attribute, e.g.
     // "application/mp4, video/mp4".
-    private static string[] SplitMimeTypes(string? mimeTypeList) =>
+    public static string[] SplitMimeTypes(string? mimeTypeList) =>
         mimeTypeList is null ? [] : [.. mimeTypeList.Split(',').Select(t => t.Trim()).Where(t => t.Length > 0)];
-
-    // docs/adr/0026.
-    private static void ApplyMimeTypeAdditions(List<PronomFileFormat> formats)
-    {
-        using var stream = typeof(PronomSignatureIndex).Assembly.GetManifestResourceStream(MimeTypeAdditionsResourceName)
-            ?? throw new InvalidOperationException($"Embedded resource '{MimeTypeAdditionsResourceName}' not found.");
-        using var reader = XmlReader.Create(stream, new XmlReaderSettings { IgnoreWhitespace = true, IgnoreComments = true });
-
-        var indexByPuid = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (var i = 0; i < formats.Count; i++)
-        {
-            if (!indexByPuid.ContainsKey(formats[i].Puid))
-            {
-                indexByPuid[formats[i].Puid] = i;
-            }
-        }
-
-        var applied = new HashSet<string>(StringComparer.Ordinal);
-        while (reader.Read())
-        {
-            if (reader.NodeType != XmlNodeType.Element || reader.LocalName != "Format")
-            {
-                continue;
-            }
-
-            var puid = reader.GetAttribute("Puid") ?? throw new InvalidOperationException($"A Format in {MimeTypeAdditionsResourceName} is missing its Puid.");
-            var mimeTypes = SplitMimeTypes(reader.GetAttribute("MimeTypes"));
-            if (mimeTypes.Length == 0)
-            {
-                throw new InvalidOperationException($"{MimeTypeAdditionsResourceName} lists {puid} with no MimeTypes.");
-            }
-
-            if (!applied.Add(puid))
-            {
-                throw new InvalidOperationException($"{MimeTypeAdditionsResourceName} lists {puid} twice.");
-            }
-
-            if (!indexByPuid.TryGetValue(puid, out var index))
-            {
-                throw new InvalidOperationException($"{MimeTypeAdditionsResourceName} lists {puid}, which isn't in {ResourceName}.");
-            }
-
-            if (formats[index].MimeTypes.Count > 0)
-            {
-                throw new InvalidOperationException($"{ResourceName} now gives {puid} a MIME type of its own; remove its entry from {MimeTypeAdditionsResourceName}.");
-            }
-
-            formats[index] = formats[index] with { MimeTypes = mimeTypes };
-        }
-    }
 
     private static int? ParseIntAttribute(XmlReader reader, string name) => PronomInternalSignatureParser.ParseIntAttribute(reader, name);
 }

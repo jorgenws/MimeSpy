@@ -23,7 +23,7 @@ Only `MimeSpy.Spy()`/`Investigate()` (and their `Stream`/async overloads), `IMim
 The XML comments are for consumers of the library and need to be informative to them.
 
 ## Data
-The two source tables live as embedded resources under Resources/ in their native XML format: `pronom-droid-signatures.xml` (PRONOM's DROID signature file) and `pronom-container-signatures.xml` (PRONOM's container signature file). Add new file formats, signatures, or extension/mime-type mappings there, not as hardcoded C#. Keep both unmodified copies of PRONOM's files; the one exception to adding data there is MIME types for common formats PRONOM leaves empty, which go in `mimespy-mime-types.xml` (docs/adr/0026).
+The two source tables live as embedded resources under Resources/ in their native XML format: `pronom-droid-signatures.xml` (PRONOM's DROID signature file) and `pronom-container-signatures.xml` (PRONOM's container signature file). Add new file formats, signatures, or extension/mime-type mappings there, not as hardcoded C#. Keep both unmodified copies of PRONOM's files; MIME types PRONOM leaves empty or gets wrong are corrected by PUID in `mimespy-mime-types.xml` instead (docs/adr/0026, 0029).
 
 ## Decisions
 Non-obvious architectural decisions are recorded as ADRs in docs/adr/ - check there before revisiting how ambiguous matches, ZIP disambiguation, or the data format are handled, and add a new one when you make a similarly hard-to-reverse call.

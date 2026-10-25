@@ -44,7 +44,11 @@ var spy = new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/", "audio/"] });
 `ExcludedMimeTypes` takes patterns the same way and leaves out every format with a type matching one, even if `MimeTypes` includes it. Combined, they say exactly which answers you want - for example every image format except DNG, so a DNG file reports as the TIFF it's built on rather than as DNG:
 
 ```csharp
-var spy = new MimeSpy(new MimeSpyOptions { MimeTypes = ["image/"], ExcludedMimeTypes = ["image/dng"] });
+var spy = new MimeSpy(new MimeSpyOptions 
+{    
+    MimeTypes = ["image/"], 
+    ExcludedMimeTypes = ["image/dng"] 
+});
 ```
 
 A left-out format is never returned and never outranks one that's allowed. The generic ZIP and OLE2 formats are still matched behind the scenes when needed, so excluding `application/zip` - or including only `application/vnd.openxmlformats` - still finds a docx by opening the archive; the plain-ZIP answer is what's left out. See [docs/adr/0027](docs/adr/0027-options-exclude-formats-and-filter-results-not-just-signatures.md).
@@ -65,21 +69,22 @@ services.AddSingleton<IMimeSpy>(new MimeSpy(new MimeSpyOptions { MimeTypes = ["i
 
 ## Performance
 
-`MimeSpy.Benchmarks` has the full BenchmarkDotNet suite and its own README; these are a couple of representative numbers from it (per-call mean / allocated, `Investigate` unless noted).
+`MimeSpy.Benchmarks` has the full BenchmarkDotNet suite and its own README; these are a few representative numbers from it (per-call mean / allocated, `Investigate` unless noted; .NET 10, default job, Ryzen 7 PRO 7840U).
 
-`Spy` vs `Investigate` on the same file - usually close (the extra work `Investigate` does, EOF confirmation and container disambiguation, is cheap for most formats), but not always:
+`Spy` vs `Investigate` on the same file - usually close (the extra work `Investigate` does, EOF confirmation and container disambiguation, is cheap for most formats), but not always. `Investigate(ReadOnlySpan<byte>)` also copies its input, which is most of what it allocates on a large file:
 
 | File | `Investigate` | `Spy` |
 | --- | --- | --- |
-| sample.mp3 | 244 µs / 675 KB | 120 µs / 134 KB |
-| sample.zip | 89 µs / 109 KB | 83 µs / 91 KB |
+| sample.mp3 (1.7 KB) | 80 µs / 2.3 KB | 42 µs / 1.7 KB |
+| sample.zip (340 B) | 45 µs / 17 KB | 34 µs / 0.6 KB |
+| sample.heic (1.6 MB) | 1.7 ms / 1.6 MB | 1.2 ms / 0.6 KB |
 
-`MimeSpyOptions` scoping to `image/` - an order of magnitude, on both a file it matches and one it doesn't (the filtered instance still has to conclude "not an image," just over a far smaller candidate set):
+`MimeSpyOptions` scoping to `image/` - 5-10x, on both a file it matches and one it doesn't (the filtered instance still has to conclude "not an image," just over a far smaller candidate set):
 
 | File | Unfiltered | `MimeTypes = ["image/"]` |
 | --- | --- | --- |
-| sample.png | 84 µs / 74 KB | 5.9 µs / 8.2 KB |
-| sample.pdf | 751 µs / 138 KB | 55 µs / 40 KB |
+| sample.png | 29 µs / 1.3 KB | 3.9 µs / 1.3 KB |
+| sample.pdf | 139 µs / 35 KB | 28 µs / 34 KB |
 
 ## Building & testing
 
@@ -102,7 +107,9 @@ Both signature tables are [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/)'
 
 Contains public sector information licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
 
-PRONOM gives most formats no MIME type, including some common ones (7z, Matroska, xz, AVIF, MPEG video, ISO images). `Resources/mimespy-mime-types.xml` fills those in for a short, hand-checked list, using Apache httpd's `mime.types`. The same file corrects types PRONOM does give where they're unhelpful. For example, PRONOM lists MP4's types alphabetically, so `application/mp4` would come first; MimeSpy puts `video/mp4` first. Each correction states the PRONOM value it was written against, and loading fails if PRONOM has since changed it, so a PRONOM update is never silently overwritten. See [docs/adr/0026](docs/adr/0026-mime-types-for-common-formats-pronom-leaves-empty.md) and [docs/adr/0029](docs/adr/0029-mime-type-overlay-corrects-pronom-not-just-fills-gaps.md).
+MIME types come from PRONOM's own format records, plus `Resources/mimespy-mime-types.xml` where PRONOM's are missing or unhelpful. Common formats come back with a MIME type: 40 of the 41 real sample files in `MimeSpy.IntegrationTests` get one, and the 41st (OTF) isn't detected at all. PRONOM also catalogs over a thousand application-specific and legacy formats that have no registered MIME type, such as individual InDesign and AutoCAD versions, GIS and scientific data files, and old office suites. MimeSpy still identifies those by PUID, name and extension, but leaves their `MimeTypes` empty rather than inventing one.
+
+PRONOM leaves the type out for a few common formats too, such as 7z, Matroska, xz, AVIF, MPEG video and ISO images. The overlay fills those in from a short, hand-checked list, using Apache httpd's `mime.types`. It also corrects types PRONOM does give where they're unhelpful. For example, PRONOM lists MP4's types alphabetically, so `application/mp4` would come first; MimeSpy puts `video/mp4` first. Each correction states the PRONOM value it was written against, and loading fails if PRONOM has since changed it, so a PRONOM update is never silently overwritten. See [docs/adr/0026](docs/adr/0026-mime-types-for-common-formats-pronom-leaves-empty.md) and [docs/adr/0029](docs/adr/0029-mime-type-overlay-corrects-pronom-not-just-fills-gaps.md).
 
 ## License
 

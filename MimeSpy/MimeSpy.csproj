@@ -10,7 +10,7 @@
 
   <PropertyGroup>
     <PackageId>MimeSpy</PackageId>
-    <Version>2.3.0</Version>
+    <Version>2.3.1</Version>
     <Authors>Jorgen Wang Svendsen</Authors>
     <Description>Detects file formats and MIME types from file content, using PRONOM's DROID and container signatures.</Description>
     <PackageTags>mime;mime-type;file-signature;magic-bytes</PackageTags>

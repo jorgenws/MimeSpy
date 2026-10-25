@@ -7,26 +7,28 @@ namespace MimeSpy;
 // type, resolving to whichever more specific PUIDs match instead.
 internal static class PronomContainerMatcher
 {
-    // file is the complete file, seekable, at position 0 - the readers need random access
-    // to it (a ZIP's central directory is at the end, OLE2 entries can be anywhere).
-    // coreMatches is FindFullMatches' result for the same file.
-    public static IReadOnlyList<PronomMatch> Refine(Stream file, IReadOnlyList<PronomMatch> coreMatches, PronomFormatFilter? filter)
+    // The container type ("ZIP" or "OLE2") of the first of coreMatches that's a generic
+    // container PUID, or null if none is - in which case there's nothing to refine, and
+    // coreMatches is already the answer.
+    public static string? FindTriggerContainerType(IReadOnlyList<PronomMatch> coreMatches)
     {
-        string? containerType = null;
         foreach (var match in coreMatches)
         {
-            containerType = PronomContainerSignatureIndex.FindTriggerContainerType(match.Format.Puid);
-            if (containerType is not null)
+            if (PronomContainerSignatureIndex.FindTriggerContainerType(match.Format.Puid) is { } containerType)
             {
-                break;
+                return containerType;
             }
         }
 
-        if (containerType is null)
-        {
-            return coreMatches;
-        }
+        return null;
+    }
 
+    // file is the complete file, seekable, at position 0 - the readers need random access
+    // to it (a ZIP's central directory is at the end, OLE2 entries can be anywhere).
+    // coreMatches is FindFullMatches' result for the same file, and containerType is
+    // FindTriggerContainerType's (non-null) answer for them.
+    public static IReadOnlyList<PronomMatch> Refine(Stream file, string containerType, IReadOnlyList<PronomMatch> coreMatches, PronomFormatFilter? filter)
+    {
         var puids = containerType == "ZIP" ? MatchZip(file) : MatchOle2(file);
         if (puids.Count == 0)
         {

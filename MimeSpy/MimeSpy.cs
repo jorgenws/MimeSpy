@@ -84,8 +84,16 @@ public sealed class MimeSpy : IMimeSpy
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Investigate(ReadOnlySpan<byte> bytes)
     {
-        var array = bytes.ToArray();
-        return InvestigateInMemory(array, array.Length);
+        var coreMatches = PronomSignatureMatcher.FindFullMatches(bytes, bytes, _filter);
+        if (PronomContainerMatcher.FindTriggerContainerType(coreMatches) is not { } containerType)
+        {
+            return ToPublic(coreMatches);
+        }
+
+        // The container readers need a Stream, which a span can't back, so only a
+        // ZIP/OLE2 match pays for copying the bytes.
+        using var file = new MemoryStream(bytes.ToArray(), writable: false);
+        return ToPublic(PronomContainerMatcher.Refine(file, containerType, coreMatches, _filter));
     }
 
     /// <inheritdoc/>
@@ -173,8 +181,13 @@ public sealed class MimeSpy : IMimeSpy
 
     // head/tail are the file's two ends (the same span when it's all in memory);
     // file is the whole file, from position 0, for the container readers.
-    private IReadOnlyList<Dossier> InvestigateCore(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, Stream file) =>
-        ToPublic(PronomContainerMatcher.Refine(file, PronomSignatureMatcher.FindFullMatches(head, tail, _filter), _filter));
+    private IReadOnlyList<Dossier> InvestigateCore(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, Stream file)
+    {
+        var coreMatches = PronomSignatureMatcher.FindFullMatches(head, tail, _filter);
+        return PronomContainerMatcher.FindTriggerContainerType(coreMatches) is { } containerType
+            ? ToPublic(PronomContainerMatcher.Refine(file, containerType, coreMatches, _filter))
+            : ToPublic(coreMatches);
+    }
 
     private static IReadOnlyList<Dossier> ToPublic(IReadOnlyList<PronomMatch> matches) =>
         matches.Count == 0 ? [] : [.. matches.Select(m => new Dossier(m.Format.Puid, m.Format.Name, m.Format.Version, m.Format.MimeTypes, m.Format.Extensions, m.Match))];

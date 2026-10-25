@@ -1,14 +1,27 @@
 name: Publish NuGet
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version in MimeSpy.csproj to increment
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
+      contents: write  # commit and tag the bumped version on main
       id-token: write  # enable GitHub OIDC token issuance for this job
     steps:
       - uses: actions/checkout@v5
@@ -18,15 +31,46 @@ jobs:
         with:
           dotnet-version: '10.x'
 
+      - name: Bump version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          current=$(grep -oP '(?<=<Version>)[^<]+' MimeSpy/MimeSpy.csproj)
+          IFS=. read -r major minor patch <<< "$current"
+          case "$BUMP" in
+            major) next="$((major + 1)).0.0" ;;
+            minor) next="$major.$((minor + 1)).0" ;;
+            patch) next="$major.$minor.$((patch + 1))" ;;
+          esac
+          sed -i "s|<Version>$current</Version>|<Version>$next</Version>|" MimeSpy/MimeSpy.csproj
+          if git diff --quiet MimeSpy/MimeSpy.csproj; then
+            echo "::error::Could not update <Version> in MimeSpy.csproj"
+            exit 1
+          fi
+          echo "Bumping $current -> $next"
+          echo "VERSION=$next" >> "$GITHUB_OUTPUT"
+
+      # Committed before building, so the commit hash embedded in the package is the tagged commit.
+      - name: Commit and tag version
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "bump version to $VERSION"
+          git tag -a "v$VERSION" -m "Release $VERSION"
+
       - name: Test
         run: dotnet test --configuration Release
 
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
       - name: Pack
-        run: dotnet pack MimeSpy/MimeSpy.csproj --configuration Release --no-build --output ./nupkgs /p:Version=${{ steps.version.outputs.VERSION }}
+        run: dotnet pack MimeSpy/MimeSpy.csproj --configuration Release --no-build --output ./nupkgs
+
+      # Pushed before NuGet: a NuGet version can't be taken back, an unpublished tag can.
+      # No rebase - if main moved during the run this is rejected and nothing is published.
+      - name: Push version to main
+        run: git push --atomic origin HEAD:main "v${{ steps.version.outputs.VERSION }}"
 
       - name: NuGet login (OIDC → temp API key)
         uses: NuGet/login@v1

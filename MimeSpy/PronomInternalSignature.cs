@@ -142,7 +142,27 @@ internal sealed record PronomSubSequence(
     int? MaxOffset,
     PronomBytePattern Anchor,
     IReadOnlyList<PronomFragmentGroup> LeftFragmentGroups,
-    IReadOnlyList<PronomFragmentGroup> RightFragmentGroups);
+    IReadOnlyList<PronomFragmentGroup> RightFragmentGroups)
+{
+    // The furthest each fragment chain can extend from the anchor (every gap at its
+    // MaxOffset, every group's longest alternative). This bounds how far the anchor can
+    // sit from the reach that the gap window checks, so a search for a short anchor doesn't
+    // have to cover the whole buffer.
+    public int MaxLeftReach { get; } = MaxReach(LeftFragmentGroups);
+
+    public int MaxRightReach { get; } = MaxReach(RightFragmentGroups);
+
+    private static int MaxReach(IReadOnlyList<PronomFragmentGroup> groups)
+    {
+        long reach = 0;
+        foreach (var group in groups)
+        {
+            reach += group.MaxOffset + group.Alternatives.Max(a => a.Length);
+        }
+
+        return (int)Math.Min(reach, int.MaxValue);
+    }
+}
 
 // An ordered chain of PronomSubSequence anchors that must all be found, in order and
 // within their gap bounds, measured from Anchor.

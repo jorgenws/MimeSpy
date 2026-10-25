@@ -165,9 +165,9 @@ internal static class PronomSignatureMatcher
             var checkedHi = sub.MaxOffset is int max ? cursor + max : data.Length;
 
             // The checked window bounds this unit's leftmost reach, not the anchor's
-            // own start - when left fragments exist, the anchor can sit arbitrarily
-            // further right than that, so its own search can't be tightly bounded above.
-            var searchHi = sub.LeftFragmentGroups.Count == 0 ? checkedHi : data.Length;
+            // own start - when left fragments exist, the anchor can sit up to the left
+            // chain's MaxLeftReach further right than that.
+            var searchHi = (int)Math.Min((long)checkedHi + sub.MaxLeftReach, data.Length);
             if (searchHi > data.Length - sub.Anchor.Length)
             {
                 searchHi = data.Length - sub.Anchor.Length;
@@ -198,13 +198,9 @@ internal static class PronomSignatureMatcher
             var searchHi = checkedHi - sub.Anchor.Length;
 
             // The checked window bounds this unit's rightmost reach, not the anchor's
-            // own end - when right fragments exist, the anchor can sit arbitrarily
-            // further left than that, so its own search can't be tightly bounded below.
-            var searchLo = sub.RightFragmentGroups.Count == 0 ? checkedLo - sub.Anchor.Length : 0;
-            if (searchLo < 0)
-            {
-                searchLo = 0;
-            }
+            // own end - when right fragments exist, the anchor can sit up to the right
+            // chain's MaxRightReach further left than that.
+            var searchLo = (int)Math.Max((long)checkedLo - sub.Anchor.Length - sub.MaxRightReach, 0);
 
             if (searchHi < searchLo || !TryMatchAnchorBackward(sub, data, searchLo, searchHi, checkedLo, checkedHi, ref budget, out cursor))
             {

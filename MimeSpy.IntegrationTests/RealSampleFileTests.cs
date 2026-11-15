@@ -69,7 +69,9 @@ public class RealSampleFileTests
         { "sample.jar", "jar", "x-fmt/412", "x-fmt/412", "application/java-archive" },
         { "sample.doc", "doc", "fmt/40", "fmt/40", "application/msword" },
         { "sample.xls", "xls", "fmt/111", "fmt/61", "application/vnd.ms-excel" },
-        { "sample.ppt", "ppt", "fmt/126", "fmt/126", "application/vnd.ms-powerpoint" },
+        // Spy can't see PowerPoint's directory entry: it sits further in than the 64 KiB
+        // that signatures without a fixed offset are searched (docs/adr/0031).
+        { "sample.ppt", "ppt", "fmt/111", "fmt/126", "application/vnd.ms-powerpoint" },
         { "sample.epub", "epub", "x-fmt/263", "fmt/483", "application/epub+zip" },
     };
 

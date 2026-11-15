@@ -28,24 +28,21 @@ internal static class PronomSignatureMatcher
     // One signature against complete content - a container entry, for PronomContainerMatcher.
     public static bool MatchesSignature(PronomInternalSignature signature, ReadOnlySpan<byte> bytes) => Matches(signature, bytes, bytes, checkEof: true);
 
-    // Only signatures that could match head[0] are tried: those indexed under that byte,
-    // plus the small set with no fixed first byte, which are always tried. A filter swaps
-    // in its own narrower pair of sets, and drops formats it doesn't allow as they match.
+    // Only the signatures PronomCandidateIndex can't rule out for head are tried, in
+    // signature-file order. A filter narrows them to the signatures it allows, and drops
+    // formats it doesn't allow as they match.
     private static IReadOnlyList<PronomMatch> FindMatches(ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter)
     {
         List<PronomMatch>? matches = null;
         Dictionary<int, int>? indexByFormatId = null;
 
-        if (head.Length > 0)
+        var index = PronomSignatureIndex.Candidates;
+        Span<ulong> candidates = stackalloc ulong[index.MaskLength];
+        index.FindCandidates(head, filter?.Candidates ?? index.AllSignatures, candidates);
+        for (var i = PronomCandidateIndex.NextSetBit(candidates, 0); i >= 0; i = PronomCandidateIndex.NextSetBit(candidates, i + 1))
         {
-            var candidates = filter is null
-                ? PronomSignatureIndex.FindSignatureIdsByFirstByte(head[0])
-                : filter.FindSignatureIdsByFirstByte(head[0]);
-            TryMatchCandidates(candidates, head, tail, checkEof, filter, ref matches, ref indexByFormatId);
+            TryMatchCandidate(index.GetSignatureId(i), head, tail, checkEof, filter, ref matches, ref indexByFormatId);
         }
-
-        var fallback = filter?.SignatureIdsWithoutFixedFirstByte ?? PronomSignatureIndex.SignatureIdsWithoutFixedFirstByte;
-        TryMatchCandidates(fallback, head, tail, checkEof, filter, ref matches, ref indexByFormatId);
 
         if (matches is null)
         {
@@ -55,48 +52,44 @@ internal static class PronomSignatureMatcher
         return PronomPriority.Order(PronomPriority.RemoveOutranked(matches, filter));
     }
 
-    // indexByFormatId dedupes across the two candidate sets above, and across a single
-    // format's own alternative signatures (PronomFileFormat.InternalSignatureIds is an OR
-    // - a format with two alternative signatures that both match must still only appear
-    // once). A partial match remembers which EOF checks it skipped, for PronomPriority.
-    private static void TryMatchCandidates(IReadOnlyList<int> signatureIds, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter, ref List<PronomMatch>? matches, ref Dictionary<int, int>? indexByFormatId)
+    // indexByFormatId dedupes across a single format's own alternative signatures
+    // (PronomFileFormat.InternalSignatureIds is an OR - a format with two alternative
+    // signatures that both match must still only appear once). A partial match
+    // remembers which EOF checks it skipped, for PronomPriority.
+    private static void TryMatchCandidate(int signatureId, ReadOnlySpan<byte> head, ReadOnlySpan<byte> tail, bool checkEof, PronomFormatFilter? filter, ref List<PronomMatch>? matches, ref Dictionary<int, int>? indexByFormatId)
     {
-        for (var i = 0; i < signatureIds.Count; i++)
+        var signature = PronomSignatureIndex.GetSignature(signatureId);
+        if (!Matches(signature, head, tail, checkEof))
         {
-            var signatureId = signatureIds[i];
-            var signature = PronomSignatureIndex.GetSignature(signatureId);
-            if (!Matches(signature, head, tail, checkEof))
+            return;
+        }
+
+        var skippedEofPart = checkEof ? null : signature.EofPartKey;
+        var formats = PronomSignatureIndex.FindFormatsBySignatureId(signatureId);
+        for (var j = 0; j < formats.Count; j++)
+        {
+            var format = formats[j];
+            // With checkEof (Investigate), a disallowed container trigger is kept for
+            // PronomContainerMatcher (docs/adr/0027).
+            if (filter is not null && !filter.Allows(format) && !(checkEof && filter.IsContainerTrigger(format)))
             {
                 continue;
             }
 
-            var skippedEofPart = checkEof ? null : signature.EofPartKey;
-            var formats = PronomSignatureIndex.FindFormatsBySignatureId(signatureId);
-            for (var j = 0; j < formats.Count; j++)
+            matches ??= [];
+            indexByFormatId ??= [];
+            if (!indexByFormatId.TryGetValue(format.Id, out var index))
             {
-                var format = formats[j];
-                // With checkEof (Investigate), a disallowed container trigger is kept for
-                // PronomContainerMatcher (docs/adr/0027).
-                if (filter is not null && !filter.Allows(format) && !(checkEof && filter.IsContainerTrigger(format)))
-                {
-                    continue;
-                }
-
-                matches ??= [];
-                indexByFormatId ??= [];
-                if (!indexByFormatId.TryGetValue(format.Id, out var index))
-                {
-                    indexByFormatId[format.Id] = matches.Count;
-                    matches.Add(skippedEofPart is null
-                        ? new PronomMatch(format, Match.Full)
-                        : new PronomMatch(format, Match.Partial, [skippedEofPart]));
-                }
-                else if (matches[index].Match == Match.Partial)
-                {
-                    matches[index] = skippedEofPart is null
-                        ? new PronomMatch(format, Match.Full)
-                        : new PronomMatch(format, Match.Partial, [.. matches[index].SkippedEofParts!, skippedEofPart]);
-                }
+                indexByFormatId[format.Id] = matches.Count;
+                matches.Add(skippedEofPart is null
+                    ? new PronomMatch(format, Match.Full)
+                    : new PronomMatch(format, Match.Partial, [skippedEofPart]));
+            }
+            else if (matches[index].Match == Match.Partial)
+            {
+                matches[index] = skippedEofPart is null
+                    ? new PronomMatch(format, Match.Full)
+                    : new PronomMatch(format, Match.Partial, [.. matches[index].SkippedEofParts!, skippedEofPart]);
             }
         }
     }
@@ -110,6 +103,12 @@ internal static class PronomSignatureMatcher
     // are treated as non-matching rather than explored, trading a vanishingly rare
     // missed match for a hard bound on how much work one signature check can do.
     private const int InitialProbeBudget = 50_000;
+
+    // A sub-sequence with no SubSeqMaxOffset - "anywhere" - is only searched for this
+    // far from its end of the file, as in DROID's shipped profiles (maxBytesToScan,
+    // docs/adr/0031). Without a cap, a file of no format with such a signature would be
+    // searched to its end for each one.
+    public const int MaxBytesToScan = 64 * 1024;
 
     // A signature's byte sequences are an AND: every one of them - BOF and EOF alike -
     // has to match for the signature as a whole to match (EOF ones only when checkEof).
@@ -162,7 +161,7 @@ internal static class PronomSignatureMatcher
         {
             var sub = subSequences[i];
             var checkedLo = cursor + sub.MinOffset;
-            var checkedHi = sub.MaxOffset is int max ? cursor + max : data.Length;
+            var checkedHi = sub.MaxOffset is int max ? cursor + max : Math.Min(data.Length, MaxBytesToScan);
 
             // The checked window bounds this unit's leftmost reach, not the anchor's
             // own start - when left fragments exist, the anchor can sit up to the left
@@ -193,7 +192,7 @@ internal static class PronomSignatureMatcher
         {
             var sub = subSequences[i];
             var checkedHi = cursor - sub.MinOffset;
-            var checkedLo = sub.MaxOffset is int max ? cursor - max : 0;
+            var checkedLo = sub.MaxOffset is int max ? cursor - max : Math.Max(0, data.Length - MaxBytesToScan);
 
             var searchHi = checkedHi - sub.Anchor.Length;
 

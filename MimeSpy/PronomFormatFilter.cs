@@ -1,20 +1,18 @@
 namespace MimeSpy;
 
-// The formats MimeSpyOptions allows, and the signatures they reference plus the
-// container triggers' (docs/adr/0027), bucketed by required first byte the same way
-// PronomSignatureIndex is. Built once per MimeSpy instance.
+// The formats MimeSpyOptions allows, and a PronomCandidateIndex scope over the
+// signatures they reference plus the container triggers' (docs/adr/0027). Built once
+// per MimeSpy instance.
 internal sealed class PronomFormatFilter
 {
-    public IReadOnlyList<int> SignatureIdsWithoutFixedFirstByte { get; }
+    public PronomCandidateIndex.Scope Candidates { get; }
 
-    private readonly Dictionary<byte, List<int>> _signatureIdsByFirstByte;
     private readonly HashSet<int> _allowedFormatIds;
     private readonly HashSet<int> _containerTriggerFormatIds;
 
-    private PronomFormatFilter(Dictionary<byte, List<int>> signatureIdsByFirstByte, List<int> signatureIdsWithoutFixedFirstByte, HashSet<int> allowedFormatIds, HashSet<int> containerTriggerFormatIds)
+    private PronomFormatFilter(PronomCandidateIndex.Scope candidates, HashSet<int> allowedFormatIds, HashSet<int> containerTriggerFormatIds)
     {
-        _signatureIdsByFirstByte = signatureIdsByFirstByte;
-        SignatureIdsWithoutFixedFirstByte = signatureIdsWithoutFixedFirstByte;
+        Candidates = candidates;
         _allowedFormatIds = allowedFormatIds;
         _containerTriggerFormatIds = containerTriggerFormatIds;
     }
@@ -22,9 +20,6 @@ internal sealed class PronomFormatFilter
     public bool Allows(PronomFileFormat format) => _allowedFormatIds.Contains(format.Id);
 
     public bool IsContainerTrigger(PronomFileFormat format) => _containerTriggerFormatIds.Contains(format.Id);
-
-    public IReadOnlyList<int> FindSignatureIdsByFirstByte(byte firstByte) =>
-        _signatureIdsByFirstByte.TryGetValue(firstByte, out var bucket) ? bucket : [];
 
     public static PronomFormatFilter Build(MimeSpyOptions options)
     {
@@ -52,27 +47,7 @@ internal sealed class PronomFormatFilter
             }
         }
 
-        var signatureIdsByFirstByte = new Dictionary<byte, List<int>>();
-        var signatureIdsWithoutFixedFirstByte = new List<int>();
-        foreach (var signatureId in includedSignatureIds)
-        {
-            if (PronomSignatureIndex.GetRequiredFirstByte(signatureId) is byte firstByte)
-            {
-                if (!signatureIdsByFirstByte.TryGetValue(firstByte, out var bucket))
-                {
-                    bucket = [];
-                    signatureIdsByFirstByte[firstByte] = bucket;
-                }
-
-                bucket.Add(signatureId);
-            }
-            else
-            {
-                signatureIdsWithoutFixedFirstByte.Add(signatureId);
-            }
-        }
-
-        return new PronomFormatFilter(signatureIdsByFirstByte, signatureIdsWithoutFixedFirstByte, allowedFormatIds, containerTriggerFormatIds);
+        return new PronomFormatFilter(PronomSignatureIndex.Candidates.CreateScope(includedSignatureIds), allowedFormatIds, containerTriggerFormatIds);
     }
 
     private static bool MatchesAnyPattern(string mimeType, IReadOnlyList<string> patterns)

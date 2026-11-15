@@ -31,11 +31,13 @@ public sealed class MimeSpy : IMimeSpy
     // chosen, revisable default.
     private const int SpyPeekReadSize = 65536;
 
-    // docs/adr/0019.
-    private const long SpyFullReadThreshold = 8 * 1024 * 1024;
+    // docs/adr/0022, sized by docs/adr/0031: the furthest any signature can reach from
+    // its end of the file (SignatureReachTests checks it still is).
+    internal const int InvestigateWindowSize = 2 * 1024 * 1024;
 
-    // docs/adr/0022.
-    private const int InvestigateWindowSize = 8 * 1024 * 1024;
+    // docs/adr/0019: Spy(Stream) gives Investigate's answer for a seekable stream this
+    // short - the size Investigate(Stream) still reads whole (docs/adr/0031).
+    internal const long SpyFullReadThreshold = 2L * InvestigateWindowSize;
 
     /// <inheritdoc/>
     public IReadOnlyList<Dossier> Spy(ReadOnlySpan<byte> bytes) => ToPublic(PronomSignatureMatcher.FindHeaderMatches(bytes, _filter));

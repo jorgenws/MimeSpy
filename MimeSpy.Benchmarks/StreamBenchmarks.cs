@@ -8,7 +8,7 @@ namespace MimeSpy.Benchmarks;
 /// <see cref="FileStream"/>, next to the read-it-all-into-memory alternative a
 /// caller would otherwise use (and that <c>Investigate(Stream)</c> itself did before
 /// docs/adr/0022). The small files take the read-whole path; the 50 MB ones are past
-/// its 16 MiB cut-off, so they take the windowed path - and, for docx/doc, refine the
+/// its 4 MiB cut-off, so they take the windowed path - and, for docx/doc, refine the
 /// ZIP/OLE2 container by reading the file in place. The interesting column for those
 /// is Allocated: it should stay roughly flat for the stream, and track file size for
 /// the baseline.

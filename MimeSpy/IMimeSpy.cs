@@ -14,6 +14,12 @@ namespace MimeSpy;
 /// before the ones they refine - so the first result is the best single answer.
 /// </para>
 /// <para>
+/// A few PRONOM signatures look for a marker at no fixed distance from the start or end
+/// of the file. Like DROID's default profiles, every method only looks for such a marker
+/// within 64 KiB of that end, so one further in is missed and a less specific match is
+/// reported.
+/// </para>
+/// <para>
 /// <see cref="MimeSpy"/> is the implementation and has no mutable state, so it can be
 /// registered as a singleton. This interface exists so callers can mock it.
 /// </para>
@@ -40,7 +46,7 @@ public interface IMimeSpy
 
     /// <summary>
     /// A quick answer from the start of <paramref name="stream"/>, or the full
-    /// <see cref="Investigate(Stream)"/> answer if the stream is seekable and no longer than 8 MiB.
+    /// <see cref="Investigate(Stream)"/> answer if the stream is seekable and no longer than 4 MiB.
     /// </summary>
     /// <remarks>
     /// A non-seekable or larger stream has its first 64 KiB read and checked as
@@ -82,12 +88,11 @@ public interface IMimeSpy
     /// without reading the whole stream into memory.
     /// </summary>
     /// <remarks>
-    /// A stream up to 16 MiB is read whole. A larger one has 8 MiB read from each end, plus
-    /// the parts of a ZIP/OLE2 container that the container check needs, read in place. Peak
-    /// memory is therefore about 16 MiB plus the size of any container entries checked,
-    /// however large the file. On a file over 16 MiB, the few PRONOM signatures that search
-    /// for a marker at no fixed distance from either end only search the first 8 MiB, so a
-    /// marker further in is missed and a less specific match is reported.
+    /// A stream up to 4 MiB is read whole. A larger one has 2 MiB read from each end, which
+    /// is further than any PRONOM signature reaches, plus the parts of a ZIP/OLE2 container
+    /// that the container check needs, read in place. Peak memory is therefore about 4 MiB
+    /// plus the size of any container entries checked, however large the file, and the
+    /// answer is the same as reading it whole.
     /// </remarks>
     /// <param name="stream">
     /// The whole file: seekable and at position 0. Copy a non-seekable source into a
@@ -100,7 +105,7 @@ public interface IMimeSpy
 
     /// <summary>The asynchronous form of <see cref="Investigate(Stream)"/>.</summary>
     /// <remarks>
-    /// On a stream over 16 MiB that turns out to be a ZIP/OLE2 container, the container
+    /// On a stream over 4 MiB that turns out to be a ZIP/OLE2 container, the container
     /// check that follows the signature match reads synchronously.
     /// </remarks>
     /// <param name="stream">As for <see cref="Investigate(Stream)"/>.</param>

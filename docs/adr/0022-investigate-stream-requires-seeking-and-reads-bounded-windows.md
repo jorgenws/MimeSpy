@@ -55,7 +55,8 @@ the caller can do in one line. Because of the position-0 check, forgetting to
 rewind before reusing the stream with MimeSpy fails loudly instead of quietly
 reading the wrong bytes.
 
-**The core signature match reads a fixed 8 MiB window from each end.**
+**The core signature match reads a fixed 8 MiB window from each end.** (Superseded
+by docs/adr/0031: unbounded searches now stop at 64 KiB, and the window is 2 MiB.)
 `PronomSignatureMatcher` evaluates BOF-anchored sequences against the head window
 and EOF-anchored sequences against the tail window. Each side only ever works
 with offsets from its own end of the file, so no other part of the matching code

@@ -31,7 +31,8 @@ about information available *before* reading a single byte.
 
 `Stream.Length` is that information, when the stream is seekable: a fact,
 not an inference. So `Spy(Stream)`/`SpyAsync` check it first - if the
-remaining length is at or under `SpyFullReadThreshold` (8 MiB, chosen the
+remaining length is at or under `SpyFullReadThreshold` (8 MiB at first, 4 MiB since
+docs/adr/0031; chosen the
 same way `SniffReadSize` was: comfortably past everyday documents/images/audio,
 far short of "unboundedly large" so a caller expecting a cheap peek is never
 surprised by `Spy` quietly buffering a multi-gigabyte file) - they read the

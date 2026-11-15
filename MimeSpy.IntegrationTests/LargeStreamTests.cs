@@ -11,8 +11,8 @@ namespace MimeSpy.IntegrationTests;
 /// </summary>
 public class LargeStreamTests
 {
-    // Past the 2 x 8 MiB point where Investigate(Stream) switches to windowed reads.
-    private const int PaddingSize = 17 * 1024 * 1024;
+    // Past the 2 x 2 MiB point where Investigate(Stream) switches to windowed reads.
+    private const int PaddingSize = 5 * 1024 * 1024;
 
     private readonly MimeSpy _sut = new();
 

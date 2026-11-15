@@ -214,6 +214,25 @@ public class MimeSpyTests
             viaSpyStream.Select(f => f.Puid).OrderBy(p => p));
     }
 
+    [Theory]
+    [InlineData(0, Match.Full)]
+    [InlineData(1, Match.Partial)]
+    public void Spy_SeekableStream_IsInvestigatedOnlyUpToSpyFullReadThreshold(int bytesPastThreshold, Match expected)
+    {
+        // A JPEG padded out to the size under test, ending in the EOI marker that
+        // Investigate's trailer check looks for and Spy's peek skips.
+        var jpeg = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "sample.jpg"));
+        var bytes = new byte[MimeSpy.SpyFullReadThreshold + bytesPastThreshold];
+        jpeg.CopyTo(bytes, 0);
+        bytes[^2] = 0xFF;
+        bytes[^1] = 0xD9;
+        using var stream = new MemoryStream(bytes);
+
+        var result = _sut.Spy(stream);
+
+        Assert.Equal(expected, Assert.Single(result, f => f.Puid == "fmt/43").Match);
+    }
+
     [Fact]
     public void Spy_NonSeekableStream_FallsBackToTheBoundedPeekInsteadOfPromoting()
     {
